@@ -346,7 +346,10 @@ class EpisodeScreen extends ConsumerWidget {
           Text(current.title, style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 16),
           Text('Season ${current.season}, Episode ${current.number}', style: Theme.of(context).textTheme.titleMedium),
-          TextButton(onPressed: () {
+          TextButton(style: TextButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            padding: EdgeInsets.zero,
+          ), onPressed: () {
             if (fromSeries) { Navigator.pop(context); } else { openTitle(context, title); }
           }, child: Text('${title.title} ›')),
 
