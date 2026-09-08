@@ -8,6 +8,8 @@ Aplicație Flutter pentru urmărirea serialelor și filmelor. TVmaze și TMDB su
 ./start.ps1
 ```
 
+
+
 Scriptul citește `.env` și pornește aplicația Windows cu date reale (`DEMO=false`). Fără configurație, un profil nou folosește TVmaze, fără token. SDK-ul local este `.tools/flutter` (ignorat de Git). Alternativ: `flutter pub get`, apoi `flutter run -d windows`. Hot reload nu recitește valorile de compilare.
 
 Windows necesită Visual Studio C++ și Developer Mode. Android necesită Android SDK; iOS necesită macOS, Xcode și semnare. Versiunea locală verificată: Flutter 3.47.2 / Dart 3.13.2.
