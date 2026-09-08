@@ -1,0 +1,13 @@
+.tools/
+.dart_tool/
+.build/
+build/
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+.idea/
+*.iml
+.flutter-plugins-dependencies
+coverage/
