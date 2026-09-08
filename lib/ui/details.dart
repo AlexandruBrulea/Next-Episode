@@ -135,10 +135,7 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
             if (season == null) const Text('No seasons available.') else ...[
               Text(season.overview, style: Theme.of(context).textTheme.bodyLarge),
               const SizedBox(height: 16),
-              if (saved) Wrap(spacing: 8, children: [
-                ActionButton(label: 'Mark season as watched', action: () => ref.read(libraryProvider.notifier).markSeason(season, true)),
-                ActionButton(label: 'Mark season as unwatched', action: () => ref.read(libraryProvider.notifier).markSeason(season, false)),
-              ]),
+              if (saved) SeasonActions(season: season),
               if (season.episodes.isEmpty) const Padding(padding: EdgeInsets.all(20), child: Text('Episodes have not been announced yet.')),
               for (final episode in [...season.episodes]..sort(episodeOrder)) ...[
                 ListTile(contentPadding: const EdgeInsets.symmetric(vertical: 8),
@@ -162,6 +159,54 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
     ),
   );
 }
+class SeasonActions extends ConsumerStatefulWidget {
+  final SeasonData season;
+  const SeasonActions({super.key, required this.season});
+  @override
+  ConsumerState<SeasonActions> createState() => _SeasonActionsState();
+}
+
+class _SeasonActionsState extends ConsumerState<SeasonActions> {
+  bool? running;
+  Future<void> mark(bool seen) async {
+    setState(() => running = seen);
+    await perform(context, () => ref.read(libraryProvider.notifier).markSeason(widget.season, seen));
+    if (mounted) setState(() => running = null);
+  }
+  @override
+  Widget build(BuildContext context) {
+    Widget button(bool seen) => Expanded(child: Tooltip(
+      message: seen ? 'Mark season as watched' : 'Mark season as unwatched',
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size(0, 48),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          foregroundColor: seen ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+          backgroundColor: seen ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.10) : Colors.transparent,
+        ),
+        onPressed: running == null ? () => mark(seen) : null,
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (running == seen) const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          else Icon(seen ? Icons.check_circle_outline : Icons.radio_button_unchecked, size: 18),
+          const SizedBox(width: 8),
+          Flexible(child: Text(seen ? 'Watched' : 'Unwatched', textAlign: TextAlign.center)),
+        ]),
+      ),
+    ));
+    return Padding(padding: const EdgeInsets.only(bottom: 16), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Mark season as', style: Theme.of(context).textTheme.labelMedium),
+        const SizedBox(height: 8),
+        IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          button(true), const SizedBox(width: 10), button(false),
+        ])),
+      ],
+    ));
+  }
+}
+
 class SeasonScreen extends ConsumerWidget {
   final int seriesId, seasonNumber;
   const SeasonScreen({
@@ -223,23 +268,7 @@ class SeasonScreen extends ConsumerWidget {
                   ),
                 if (!saved) LibraryAction(bundle.title),
                 if (saved)
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      ActionButton(
-                        label: 'Mark season as watched',
-                        action: () => ref
-                            .read(libraryProvider.notifier)
-                            .markSeason(season, true),
-                      ),
-                      ActionButton(
-                        label: 'Mark season as unwatched',
-                        action: () => ref
-                            .read(libraryProvider.notifier)
-                            .markSeason(season, false),
-                      ),
-                    ],
-                  ),
+                  SeasonActions(season: season),
                 const Text(
                   'Only released episodes will be marked as watched.',
                 ),
