@@ -23,6 +23,20 @@ try {
     foreach ($entry in @{mdpi=48; hdpi=72; xhdpi=96; xxhdpi=144; xxxhdpi=192}.GetEnumerator()) {
         Write-IconPng $entry.Value (Join-Path $projectRoot "android/app/src/main/res/mipmap-$($entry.Key)/ic_launcher.png")
     }
+    $launchPath = Join-Path $projectRoot 'ios/Runner/Assets.xcassets/LaunchImage.imageset'
+    foreach ($launch in @(@{name='LaunchImage.png'; width=168; height=185}, @{name='LaunchImage@2x.png'; width=336; height=370}, @{name='LaunchImage@3x.png'; width=504; height=555})) {
+        $bitmap = [Drawing.Bitmap]::new($launch.width, $launch.height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $graphics.Clear([Drawing.Color]::FromArgb(4, 12, 40))
+            $graphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $side = [Math]::Min($launch.width, $launch.height)
+            $offsetX = [int](($launch.width - $side) / 2)
+            $offsetY = [int](($launch.height - $side) / 2)
+            $graphics.DrawImage($source, [Drawing.Rectangle]::new($offsetX, $offsetY, $side, $side))
+            $bitmap.Save((Join-Path $launchPath $launch.name), [Drawing.Imaging.ImageFormat]::Png)
+        } finally { $graphics.Dispose(); $bitmap.Dispose() }
+    }
     Write-IconPng 512 (Join-Path $projectRoot 'assets/branding/google-play-icon.png')
     $frames = @()
     foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
