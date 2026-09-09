@@ -6,7 +6,7 @@ Status: preparation only. Apple Developer enrollment is pending. No signing cred
 
 - Entry point: `lib/main.dart`.
 - Bundle identifier: `ro.nextepisode.nextEpisode` (register exactly this identifier, or deliberately update the project before creating the app record).
-- Current version: `0.1.0+1`; valid for initial testing. Increase the build number for subsequent uploads. Choose the public version before App Store release.
+- Current version: `0.1.0+2`; build 1 was uploaded for pipeline verification. Increase the build number for every subsequent upload. Choose the public version before App Store release.
 - Minimum iOS version: 15.0.
 - Never use `lib/retention_preview.dart` or `DEMO=true` for a distributed build.
 
