@@ -77,6 +77,7 @@ class _LegalScreenState extends State<LegalScreen> {
             Text('Next Episode', style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text('Last updated: ${data['updated']}', style: Theme.of(context).textTheme.bodySmall),
+            SourceCredit('View online', widget.privacy ? privacyPolicyUrl : termsOfUseUrl),
             for (final section in data['sections'] as List) ...[
               const SizedBox(height: 24),
               Text(section['title'] as String, style: Theme.of(context).textTheme.titleMedium),

@@ -1,5 +1,9 @@
 /// Supplied at build time with --dart-define-from-file=.env.
 const supportEmail = String.fromEnvironment('SUPPORT_EMAIL');
+const privacyPolicyUrl =
+    'https://alexandrubrulea.github.io/Next-Episode/legal/privacy.html';
+const termsOfUseUrl =
+    'https://alexandrubrulea.github.io/Next-Episode/legal/terms.html';
 const supportContactLabel = supportEmail == ''
     ? 'Support contact not configured'
     : supportEmail;

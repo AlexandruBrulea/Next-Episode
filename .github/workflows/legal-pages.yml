@@ -24,7 +24,7 @@ jobs:
       - name: Prepare public documents only
         run: |
           mkdir -p public/legal
-          cp docs/legal/privacy.html docs/legal/terms.html public/legal/
+          cp docs/legal/privacy.html docs/legal/terms.html docs/legal/support.html public/legal/
           cp docs/legal/privacy.html public/legal/index.html
           touch public/.nojekyll
       - uses: actions/upload-pages-artifact@v3

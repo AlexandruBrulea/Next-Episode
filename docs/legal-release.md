@@ -12,8 +12,15 @@ The app reads `assets/legal/privacy.json` and `assets/legal/terms.json` offline.
 
 ## Required before public release
 
+GitHub Pages privacy URL was confirmed working by the publisher. Public addresses:
+- Privacy: https://alexandrubrulea.github.io/Next-Episode/legal/privacy.html
+- Terms: https://alexandrubrulea.github.io/Next-Episode/legal/terms.html
+- Support: https://alexandrubrulea.github.io/Next-Episode/legal/support.html
+
+The app now includes View online links in both legal screens. The new support page and updated navigation require another manual run of Publish legal pages after pushing the generated HTML and workflow. Confirm all three URLs before entering them in App Store Connect. The exporter generates support contact from the same SUPPORT_EMAIL setting.
+
 - Confirm the postal contact address and any other legally required publisher details before publication. The confirmed publisher is **Alexandru Ionut Brulea**, based in **Romania**. No address was supplied or invented. Email is configured once using **SUPPORT_EMAIL** in `.env`.
-- Publish the HTML at stable public HTTPS URLs, without login or geographic restrictions. No hosting or store submission has been performed. Put the privacy URL in App Store Connect and Play Console and link it from the app once the URL is known. The in-app copy remains available offline.
+- Keep the HTML at stable public HTTPS URLs, without login or geographic restrictions. Put the privacy URL in App Store Connect and Play Console. The in-app copy remains available offline. Store submission has not been performed.
 - Review and accept the complete current TMDB API agreement in the developer account. The official FAQ supports noncommercial use with attribution, but is not the complete contract. Recheck licensing before introducing any revenue model.
 - Confirm actual provider retention/transfer safeguards and the privacy policy's legal bases with the publisher. Complete Apple App Privacy and Google Data safety accurately: local-only library storage does not mean no information leaves the device. Catalog requests, image requests and optional support email involve external services. Do not claim unverified provider retention or mark every category “not collected” without evaluating store definitions.
 - Review audience/age rating and the rights to third-party content for the intended markets. Verify privacy disclosures for the exact SDK versions and final release build. A document alone cannot satisfy all operational legal duties.
