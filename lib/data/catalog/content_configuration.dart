@@ -11,11 +11,13 @@ import 'tvmaze_provider.dart';
 class ContentRelease {
   final String provider, deploymentId, phase;
   final int generation;
+  final bool? tmdbContentEnabled;
   const ContentRelease(
     this.provider,
     this.deploymentId,
     this.generation, {
     this.phase = 'committed',
+    this.tmdbContentEnabled,
   });
   factory ContentRelease.fromJson(Json data) {
     if (data['provider'] is! String ||
@@ -25,8 +27,11 @@ class ContentRelease {
             'deploymentId',
             'generation',
             'phase',
+            'tmdbContentEnabled',
           ].contains(key),
         ) ||
+        (data.containsKey('tmdbContentEnabled') &&
+            data['tmdbContentEnabled'] is! bool) ||
         data['deploymentId'] is! String ||
         string(data['deploymentId']).isEmpty ||
         data['generation'] is! int ||
@@ -39,6 +44,7 @@ class ContentRelease {
       data['deploymentId'],
       data['generation'],
       phase: data['phase'],
+      tmdbContentEnabled: data['tmdbContentEnabled'] as bool?,
     );
   }
 }
@@ -100,6 +106,16 @@ class ContentCoordinator {
       await router.initialize();
       final release = await source.fetch();
       if (release == null) return;
+      if (release.phase == 'committed' && release.tmdbContentEnabled != null) {
+        await router.db.setTmdbContentEnabled(
+          release.tmdbContentEnabled!,
+          release.generation,
+        );
+      }
+      await router.db.enforceTmdbRetention();
+      if (release.provider == 'tmdb' && !await router.db.tmdbContentAllowed()) {
+        return;
+      }
       final state = await router.db
           .customSelect('SELECT * FROM content_state WHERE singleton=1')
           .getSingle();
@@ -134,7 +150,7 @@ const configuredProvider = String.fromEnvironment(
     defaultValue: 'tvmaze',
   ),
 );
-Map<String, CatalogProvider> configuredModules() => {
+Map<String, CatalogProvider> configuredModules({AppDatabase? db}) => {
   'tvmaze': TvmazeProvider(
     baseUrl: const String.fromEnvironment(
       'TVMAZE_BASE_URL',
@@ -142,6 +158,7 @@ Map<String, CatalogProvider> configuredModules() => {
     ),
   ),
   'tmdb': TmdbProvider(
+    checkContentAccess: db?.requireTmdbContent,
     token: const String.fromEnvironment('TMDB_TOKEN'),
     baseUrl: const String.fromEnvironment(
       'TMDB_BASE_URL',
@@ -150,7 +167,8 @@ Map<String, CatalogProvider> configuredModules() => {
   ),
 };
 Future<CatalogRouter> initializeCatalog(AppDatabase db) async {
-  final modules = configuredModules();
+  await db.enforceTmdbRetention();
+  final modules = configuredModules(db: db);
   final router = CatalogRouter(
     db: db,
     modules: modules,
@@ -168,6 +186,10 @@ Future<CatalogRouter> initializeCatalog(AppDatabase db) async {
               configuredProvider,
               'configured:$generation:$configuredProvider',
               generation,
+              tmdbContentEnabled: bool.fromEnvironment(
+                'TMDB_CONTENT_ENABLED',
+                defaultValue: true,
+              ),
             ),
           )
         : RemoteContentConfiguration(remoteUrl);

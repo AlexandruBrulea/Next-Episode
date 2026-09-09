@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../../domain/models.dart';
 import '../database.dart';
+import '../tmdb_retention.dart';
 
 class CatalogConflict implements Exception {
   final String code, detail;
@@ -88,6 +89,7 @@ class InternalCatalog {
   }
 
   Future<void> saveTitle(TitleData title, {double confidence = 1}) async {
+    if (title.provider == 'tmdb') await db.requireTmdbContent();
     final conflict = await db
         .customSelect(
           'SELECT local_id FROM catalog_refs WHERE provider=? AND type=? AND remote_id=?',
@@ -106,7 +108,11 @@ class InternalCatalog {
     }
     await db.customStatement(
       'INSERT OR REPLACE INTO catalog_titles VALUES (?,?,?)',
-      [title.type.name, title.id, jsonEncode(title.raw)],
+      [
+        title.type.name,
+        title.id,
+        jsonEncode(stampTmdb(title.raw, db.retentionClock())),
+      ],
     );
     await db.customStatement(
       'INSERT INTO catalog_refs VALUES (?,?,?,?) ON CONFLICT(provider,type,remote_id) DO NOTHING',
@@ -309,8 +315,8 @@ class InternalCatalog {
     await db.cache(
       'series:${bundle.title.id}',
       bundle.toJson(),
-      DateTime.now(),
+      db.retentionClock(),
     );
-    await db.updateTitle(bundle.title, DateTime.now());
+    await db.updateTitle(bundle.title, db.retentionClock());
   }
 }

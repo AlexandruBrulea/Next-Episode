@@ -71,8 +71,14 @@ class TitleInformation extends StatelessWidget {
             ])),
           ]),
       if (availableServices.isNotEmpty) ...[
+        if (title.provider == 'tmdb')
+          const Padding(padding: EdgeInsets.only(top: 12), child: Text(
+            'Services listed across regions. Availability and access requirements vary; check the service for current options.')),
         if (viewingUrl.isNotEmpty) SourceCredit('See viewing options', viewingUrl),
-        const Text('Streaming availability powered by JustWatch.'),
+        if (title.provider == 'tmdb')
+          const SourceCredit('Availability data by JustWatch, via TMDB', 'https://www.justwatch.com')
+        else
+          const Text('Streaming availability powered by JustWatch.'),
       ],
       const SizedBox(height: 24),
       InfoLine('First aired', dateLabel(title.releaseDate)),

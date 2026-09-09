@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 
 import '../../domain/models.dart';
 import '../../domain/catalog_provider.dart';
+import '../tmdb_retention.dart';
 
 class TmdbProvider extends CatalogProvider {
   @override
@@ -16,8 +17,10 @@ class TmdbProvider extends CatalogProvider {
   );
   final Dio dio;
   final String token;
+  final Future<void> Function()? checkContentAccess;
   TmdbProvider({
     required this.token,
+    this.checkContentAccess,
     Dio? client,
     String baseUrl = 'https://api.themoviedb.org/3',
   }) : dio =
@@ -34,6 +37,7 @@ class TmdbProvider extends CatalogProvider {
     String language, [
     Json parameters = const {},
   ]) async {
+    await checkContentAccess?.call();
     if (token.trim().isEmpty) {
       throw const ApiFailure(
         'Missing TMDB token. Configure TMDB_TOKEN as described in the README. Your local library is still available.',
@@ -50,14 +54,14 @@ class TmdbProvider extends CatalogProvider {
           },
         ),
       );
+      await checkContentAccess?.call();
       if (response.data is! Map) throw const FormatException();
       return Json.from(response.data);
     } on DioException catch (e) {
       throw ApiFailure(switch (e.type) {
         DioExceptionType.connectionTimeout ||
         DioExceptionType.receiveTimeout ||
-        DioExceptionType.sendTimeout =>
-          'TMDB timed out. Please try again.',
+        DioExceptionType.sendTimeout => 'TMDB timed out. Please try again.',
         DioExceptionType.connectionError =>
           'No connection. Check your internet connection.',
         _ => switch (e.response?.statusCode) {
@@ -119,7 +123,9 @@ class TmdbProvider extends CatalogProvider {
     var totalPages = 1;
     for (var i = 0; i < responses.length; i++) {
       final data = responses[i];
-      if (data['results'] is! List) throw const ApiFailure('Invalid popular titles response.');
+      if (data['results'] is! List) {
+        throw const ApiFailure('Invalid popular titles response.');
+      }
       final pages = integer(data['total_pages'], 1);
       if (i == 0 || pages < totalPages) totalPages = pages;
       for (final item in objects(data['results'])) {
@@ -127,7 +133,10 @@ class TmdbProvider extends CatalogProvider {
         titles.add(_normalize(i == 0 ? MediaType.tv : MediaType.movie, item));
       }
     }
-    titles.sort((a, b) => decimal(b.raw['popularity']).compareTo(decimal(a.raw['popularity'])));
+    titles.sort(
+      (a, b) =>
+          decimal(b.raw['popularity']).compareTo(decimal(a.raw['popularity'])),
+    );
     return SearchPage(titles, page, totalPages.clamp(1, 500).toInt());
   }
 
@@ -167,6 +176,7 @@ class TmdbProvider extends CatalogProvider {
   TitleData _normalize(MediaType type, Json data) => TitleData(type, {
     ...data,
     'provider': id,
+    tmdbObtainedKey: DateTime.now().toUtc().toIso8601String(),
     'source_id': data['id'],
     'source_url': 'https://www.themoviedb.org/${type.name}/${data['id']}',
     'poster_path': _image(data['poster_path']),

@@ -5,10 +5,138 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 
 import '../domain/models.dart';
+import 'tmdb_retention.dart';
 
 /// Explicit SQL keeps the small schema reviewable without generated code.
 /// All writes are parameterized; schemaVersion owns future migrations.
 class AppDatabase extends GeneratedDatabase {
+  DateTime Function() retentionClock = DateTime.now;
+  DateTime? nextTmdbExpiry;
+  bool get tmdbBuildEnabled =>
+      const bool.fromEnvironment('TMDB_CONTENT_ENABLED', defaultValue: true);
+  Future<bool> tmdbContentAllowed() async =>
+      tmdbBuildEnabled && await preference('tmdb_content_enabled') != 'false';
+
+  Future<void> requireTmdbContent() async {
+    if (!await tmdbContentAllowed()) {
+      throw StateError('TMDB content is disabled');
+    }
+  }
+
+  Future<bool> setTmdbContentEnabled(bool enabled, int revision) async {
+    return transaction(() async {
+      final previous =
+          int.tryParse(await preference('tmdb_policy_revision') ?? '') ?? -1;
+      if (revision <= previous) return false;
+      await setPreference('tmdb_content_enabled', '$enabled');
+      await setPreference('tmdb_policy_revision', '$revision');
+      await enforceTmdbRetention();
+      return true;
+    });
+  }
+
+  /// Runs before public reads, also covers copies stored for administrative rollback.
+  /// Only metadata changes; library membership, marks and internal identity slots survive.
+  Future<bool> enforceTmdbRetention() async {
+    final now = retentionClock();
+    final enabled = await tmdbContentAllowed();
+    DateTime? nextExpiry;
+    void rememberExpiry(TmdbScrubber scrubber) {
+      final expiry = scrubber.nextExpiry;
+      if (expiry != null &&
+          (nextExpiry == null || expiry.isBefore(nextExpiry!))) {
+        nextExpiry = expiry;
+      }
+    }
+
+    var changed = false;
+    await transaction(() async {
+      await customStatement('PRAGMA secure_delete=ON');
+      for (final table in ['library', 'catalog_titles', 'cache']) {
+        for (final row in await customSelect(
+          'SELECT rowid AS retention_rowid,* FROM $table',
+        ).get()) {
+          final scrubber = TmdbScrubber(now, enabled: enabled);
+          final raw = Json.from(jsonDecode(row.read<String>('data')));
+          final obtained = DateTime.tryParse(
+            '${row.data['fetched_at'] ?? row.data['updated_at'] ?? ''}',
+          );
+          final cleaned = scrubber.scrub(
+            raw,
+            obtained: obtained,
+            legacyTitle:
+                table != 'cache' ||
+                string(row.data['key']).startsWith('movie:'),
+          );
+          rememberExpiry(scrubber);
+          if (!scrubber.changed) continue;
+          changed = true;
+          if (table == 'cache') {
+            await customStatement('DELETE FROM cache WHERE rowid=?', [
+              row.read<int>('retention_rowid'),
+            ]);
+          } else {
+            await customStatement('UPDATE $table SET data=? WHERE rowid=?', [
+              jsonEncode(cleaned),
+              row.read<int>('retention_rowid'),
+            ]);
+          }
+        }
+      }
+      for (final row in await customSelect(
+        'SELECT * FROM admin_migrations',
+      ).get()) {
+        final id = row.read<String>('id');
+        final obtained = DateTime.tryParse(row.read<String>('created_at'));
+        final scrubber = TmdbScrubber(now, enabled: enabled);
+        scrubber.scrub(row.read<String>('backup'));
+        final items = await customSelect(
+          'SELECT * FROM admin_migration_items WHERE migration_id=?',
+          variables: [Variable(id)],
+        ).get();
+        for (final item in items) {
+          scrubber.scrub(
+            item.readNullable<String>('staged'),
+            obtained: obtained,
+            legacyTitle: true,
+          );
+          scrubber.scrub(item.read<String>('fingerprint'), obtained: obtained);
+        }
+        rememberExpiry(scrubber);
+        if (!scrubber.changed) continue;
+        changed = true;
+        // Partial rollback is unsafe. Invalidate the snapshot, not the live TVmaze catalog.
+        await customStatement(
+          "UPDATE admin_migrations SET backup='{}',report='{}',status='retention_expired' WHERE id=?",
+          [id],
+        );
+        await customStatement(
+          'DELETE FROM admin_migration_items WHERE migration_id=?',
+          [id],
+        );
+      }
+      // Diagnostic records are not user progress. Do not keep provider-derived text indefinitely.
+      for (final row in await customSelect(
+        "SELECT * FROM entity_links WHERE provider='tmdb'",
+      ).get()) {
+        final obtained = DateTime.tryParse(
+          row.read<String>('last_verified_at'),
+        );
+        if (enabled &&
+            obtained != null &&
+            now.toUtc().isBefore(tmdbExpiry(obtained))) {
+          continue;
+        }
+        await customStatement(
+          'UPDATE entity_links SET external_imdb_id=NULL,external_tvdb_id=NULL WHERE entity_key=? AND provider=?',
+          [row.read<String>('entity_key'), 'tmdb'],
+        );
+      }
+    });
+    nextTmdbExpiry = nextExpiry;
+    return changed;
+  }
+
   AppDatabase(super.executor);
   factory AppDatabase.file(File file) =>
       AppDatabase(NativeDatabase.createInBackground(file));
@@ -236,9 +364,14 @@ class AppDatabase extends GeneratedDatabase {
   }
 
   Future<void> importIdentity(TitleData title) async {
+    if (title.provider == 'tmdb') await requireTmdbContent();
     await customStatement(
       'INSERT OR IGNORE INTO catalog_titles VALUES (?,?,?)',
-      [title.type.name, title.id, jsonEncode(title.raw)],
+      [
+        title.type.name,
+        title.id,
+        jsonEncode(stampTmdb(title.raw, retentionClock())),
+      ],
     );
     await customStatement(
       'INSERT OR IGNORE INTO catalog_refs VALUES (?,?,?,?)',
@@ -246,26 +379,31 @@ class AppDatabase extends GeneratedDatabase {
     );
   }
 
-  Future<List<LibraryEntry>> library() async =>
-      (await customSelect('SELECT * FROM library ORDER BY added_at DESC').get())
-          .map(
-            (row) => LibraryEntry(
-              TitleData(
-                MediaType.values.byName(row.read<String>('type')),
-                Json.from(jsonDecode(row.read<String>('data'))),
-              ),
-              DateTime.parse(row.read<String>('added_at')),
-              DateTime.tryParse(row.readNullable<String>('updated_at') ?? ''),
+  Future<List<LibraryEntry>> library() async {
+    await enforceTmdbRetention();
+    return (await customSelect('SELECT * FROM library ORDER BY added_at DESC')
+            .get())
+        .map(
+          (row) => LibraryEntry(
+            TitleData(
+              MediaType.values.byName(row.read<String>('type')),
+              Json.from(jsonDecode(row.read<String>('data'))),
             ),
-          )
-          .toList();
+            DateTime.parse(row.read<String>('added_at')),
+            DateTime.tryParse(row.readNullable<String>('updated_at') ?? ''),
+          ),
+        )
+        .toList();
+  }
+
   Future<void> add(TitleData title, DateTime now) => transaction(() async {
+    if (title.provider == 'tmdb') await requireTmdbContent();
     await customStatement(
       'INSERT OR IGNORE INTO library (key,type,data,added_at) VALUES (?,?,?,?)',
       [
         title.key,
         title.type.name,
-        jsonEncode(title.raw),
+        jsonEncode(stampTmdb(title.raw, now)),
         now.toIso8601String(),
       ],
     );
@@ -285,10 +423,14 @@ class AppDatabase extends GeneratedDatabase {
     );
   }
 
-  Future<void> updateTitle(TitleData title, DateTime now) => customStatement(
-    'UPDATE library SET data = ?, updated_at = ? WHERE key = ?',
-    [jsonEncode(title.raw), now.toIso8601String(), title.key],
-  );
+  Future<void> updateTitle(TitleData title, DateTime now) async {
+    if (title.provider == 'tmdb') await requireTmdbContent();
+    await customStatement(
+      'UPDATE library SET data = ?, updated_at = ? WHERE key = ?',
+      [jsonEncode(stampTmdb(title.raw, now)), now.toIso8601String(), title.key],
+    );
+  }
+
   Future<Map<String, DateTime>> watched() async => {
     for (final row in await customSelect('SELECT * FROM watched').get())
       row.read<String>('key'): DateTime.parse(row.read<String>('marked_at')),
@@ -312,16 +454,44 @@ class AppDatabase extends GeneratedDatabase {
       variables: [Variable(key)],
     ).getSingleOrNull();
     if (row == null) return null;
-    return (
-      data: Json.from(jsonDecode(row.read<String>('data'))),
-      fetchedAt: DateTime.parse(row.read<String>('fetched_at')),
+    final data = Json.from(jsonDecode(row.read<String>('data')));
+    final obtained = DateTime.parse(row.read<String>('fetched_at'));
+    final scrubber = TmdbScrubber(
+      retentionClock(),
+      enabled: await tmdbContentAllowed(),
+    );
+    scrubber.scrub(
+      data,
+      obtained: obtained,
+      legacyTitle: key.startsWith('movie:'),
+    );
+    if (scrubber.changed) {
+      await customStatement('DELETE FROM cache WHERE key=?', [key]);
+      return null;
+    }
+    return (data: stampTmdb(data, obtained), fetchedAt: obtained);
+  }
+
+  Future<void> cache(String key, Json data, DateTime now) async {
+    final scrubber = TmdbScrubber(
+      retentionClock(),
+      enabled: await tmdbContentAllowed(),
+    );
+    final stamped = stampTmdb(data, now);
+    scrubber.scrub(
+      stamped,
+      obtained: now,
+      legacyTitle: key.startsWith('movie:'),
+    );
+    if (scrubber.changed) {
+      throw StateError('Expired or disabled TMDB content cannot be stored');
+    }
+    await customStatement(
+      'INSERT OR REPLACE INTO cache (key,data,fetched_at) VALUES (?,?,?)',
+      [key, jsonEncode(stamped), now.toIso8601String()],
     );
   }
 
-  Future<void> cache(String key, Json data, DateTime now) => customStatement(
-    'INSERT OR REPLACE INTO cache (key,data,fetched_at) VALUES (?,?,?)',
-    [key, jsonEncode(data), now.toIso8601String()],
-  );
   Future<String?> preference(String key) async => (await customSelect(
     'SELECT value FROM preferences WHERE key = ?',
     variables: [Variable(key)],

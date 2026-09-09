@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../../domain/catalog_provider.dart';
 import '../../domain/models.dart';
 import '../database.dart';
+import '../tmdb_retention.dart';
 import 'internal_catalog.dart';
 
 /// Public reads use the committed catalog. Only the administrative migration
@@ -84,10 +85,23 @@ class CatalogRouter extends CatalogProvider {
     if (row == null) {
       throw const ApiFailure('This title cannot be loaded right now.');
     }
-    return TitleData(type, Json.from(jsonDecode(row.read<String>('data'))));
+    final data = Json.from(jsonDecode(row.read<String>('data')));
+    final scrubber = TmdbScrubber(
+      db.retentionClock(),
+      enabled: await db.tmdbContentAllowed(),
+    );
+    final cleaned = Json.from(scrubber.scrub(data, legacyTitle: true) as Map);
+    if (scrubber.changed) {
+      await db.customStatement(
+        'UPDATE catalog_titles SET data=? WHERE type=? AND local_id=?',
+        [jsonEncode(cleaned), type.name, localId],
+      );
+    }
+    return TitleData(type, cleaned);
   }
 
   Future<TitleData> _register(TitleData remote) => db.transaction(() async {
+    if (remote.provider == 'tmdb') await db.requireTmdbContent();
     final alias = await db
         .customSelect(
           'SELECT local_id FROM catalog_refs WHERE provider=? AND type=? AND remote_id=?',
@@ -144,6 +158,7 @@ class CatalogRouter extends CatalogProvider {
   Future<SearchPage> search(String query, MediaType? type, int page) async {
     await initialize();
     final provider = _active;
+    if (provider == 'tmdb') await db.requireTmdbContent();
     final result = await selected.search(query, type, page);
     if (provider != _active) return search(query, type, page);
     final titles = <TitleData>[];
@@ -157,25 +172,46 @@ class CatalogRouter extends CatalogProvider {
   Future<SearchPage> popular(int page) async {
     await initialize();
     final provider = _active;
+    if (provider == 'tmdb') await db.requireTmdbContent();
     final key = 'popular:$provider:$page';
     final cache = await db.cached(key);
-    SearchPage? saved() => cache == null ? null : SearchPage(
-      objects(cache.data['results']).map((item) => TitleData(MediaType.values.byName(item['type']), Json.from(item['data']))).toList(),
-      page, integer(cache.data['total_pages'], 1));
-    if (cache != null && DateTime.now().difference(cache.fetchedAt) < const Duration(hours: 12)) return saved()!;
+    SearchPage? saved() => cache == null
+        ? null
+        : SearchPage(
+            objects(cache.data['results'])
+                .map(
+                  (item) => TitleData(
+                    MediaType.values.byName(item['type']),
+                    Json.from(item['data']),
+                  ),
+                )
+                .toList(),
+            page,
+            integer(cache.data['total_pages'], 1),
+          );
+    if (cache != null &&
+        DateTime.now().difference(cache.fetchedAt) < const Duration(hours: 12)) {
+      return saved()!;
+    }
     try {
       final remote = await selected.popular(page);
-      if (provider != _active) return popular(page);
+      if (provider != _active) return await popular(page);
       final titles = <TitleData>[];
-      for (final title in remote.results) { titles.add(await _register(title)); }
+      for (final title in remote.results) {
+        titles.add(await _register(title));
+      }
       await db.cache(key, {
-        'results': [for (final title in titles) {'type': title.type.name, 'data': title.raw}],
+        'results': [
+          for (final title in titles)
+            {'type': title.type.name, 'data': title.raw},
+        ],
         'total_pages': remote.totalPages,
       }, DateTime.now());
       return SearchPage(titles, remote.page, remote.totalPages);
     } catch (_) {
       if (provider != _active) return popular(page);
-      if (cache != null) return saved()!;
+      if (provider == 'tmdb') await db.requireTmdbContent();
+      if (await db.cached(key) != null && cache != null) return saved()!;
       rethrow;
     }
   }
@@ -184,6 +220,7 @@ class CatalogRouter extends CatalogProvider {
   Future<TitleData> title(MediaType type, int id) async {
     await initialize();
     final old = await identity(type, id);
+    if (old.provider == 'tmdb') await db.requireTmdbContent();
     final module = modules[old.provider];
     if (module == null) {
       throw const ApiFailure('Information cannot be updated right now.');
@@ -214,6 +251,7 @@ class CatalogRouter extends CatalogProvider {
   Future<SeriesBundle> series(int id) async {
     await initialize();
     final old = await identity(MediaType.tv, id);
+    if (old.provider == 'tmdb') await db.requireTmdbContent();
     final module = modules[old.provider];
     if (module == null) {
       throw const ApiFailure('Information cannot be updated right now.');

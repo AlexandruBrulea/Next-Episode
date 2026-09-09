@@ -34,7 +34,8 @@ class _AlertTimePickerState extends State<AlertTimePicker> {
         children: [for (final value in values) Center(child: Text(value,
           style: Theme.of(context).textTheme.titleLarge))],
       )));
-    return Card(clipBehavior: Clip.antiAlias, child: ExpansionTile(
+    return Card(margin: EdgeInsets.zero, clipBehavior: Clip.antiAlias, child: ExpansionTile(
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
       initiallyExpanded: false,
       maintainState: true,
       leading: const Icon(Icons.schedule, size: 22),

@@ -22,6 +22,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   int tab = 0;
   Timer? timer;
+  Timer? retentionTimer;
+  void scheduleRetention() {
+    retentionTimer?.cancel();
+    if (!mounted) return;
+    final expiry = ref.read(databaseProvider).nextTmdbExpiry;
+    if (expiry == null) return;
+    final remaining = expiry.difference(DateTime.now());
+    final delay = remaining.isNegative
+        ? const Duration(seconds: 1)
+        : remaining > const Duration(hours: 1)
+        ? const Duration(hours: 1)
+        : remaining;
+    retentionTimer = Timer(delay, () async {
+      try {
+        await ref.read(libraryProvider.notifier).maintainRetention();
+      } catch (_) {
+        if (mounted) {
+          setState(
+            () => syncMessage = 'Local information could not be refreshed. Please restart the app.',
+          );
+        }
+      } finally {
+        if (mounted) scheduleRetention();
+      }
+    });
+  }
+
   String? syncMessage;
   bool syncing = false;
   @override
@@ -52,12 +79,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (mounted) setState(() => syncMessage = publicError(e));
     } finally {
       if (mounted) setState(() => syncing = false);
+      scheduleRetention();
     }
   }
 
   @override
   void dispose() {
     timer?.cancel();
+    retentionTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -68,7 +97,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('NEXT EPISODE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 3, color: neonCyan)),
+          const Text(
+            'NEXT EPISODE',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 3,
+              color: neonCyan,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(['My library', 'Discover', 'To watch', 'Calendar'][tab]),
         ],
@@ -159,19 +196,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       final savedSort = await db.preference('library.sort');
       // Accept preferences saved by the previous Romanian interface.
       const legacyLabels = {
-        'Toate': 'All', 'Seriale': 'Shows', 'Filme': 'Movies',
+        'Toate': 'All',
+        'Seriale': 'Shows',
+        'Filme': 'Movies',
         'Cu episoade nevăzute': 'With unwatched episodes',
-        'Terminate': 'Completed', 'Data adăugării': 'Date added',
-        'Titlu': 'Title', 'Progres': 'Progress',
+        'Terminate': 'Completed',
+        'Data adăugării': 'Date added',
+        'Titlu': 'Title',
+        'Progres': 'Progress',
       };
       if (mounted) {
         setState(() {
           final restoredFilter = legacyLabels[savedFilter] ?? savedFilter;
           final restoredSort = legacyLabels[savedSort] ?? savedSort;
-          if (['All', 'Shows', 'Movies', 'With unwatched episodes', 'Completed'].contains(restoredFilter)) {
+          if ([
+            'All',
+            'Shows',
+            'Movies',
+            'With unwatched episodes',
+            'Completed',
+          ].contains(restoredFilter)) {
             filter = restoredFilter!;
           }
-          if (['Date added', 'Title', 'Rating', 'Progress'].contains(restoredSort)) {
+          if ([
+            'Date added',
+            'Title',
+            'Rating',
+            'Progress',
+          ].contains(restoredSort)) {
             sort = restoredSort!;
           }
         });
@@ -184,145 +236,144 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     final supportsMovies = ref.watch(apiProvider).capabilities.movies;
     final activeFilter = !supportsMovies && filter == 'Movies' ? 'All' : filter;
     return Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: TextField(
-          decoration: const InputDecoration(
-            labelText: 'Search your library',
-            prefixIcon: Icon(Icons.search),
-            border: OutlineInputBorder(),
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Search your library',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (value) =>
+                setState(() => query = value.toLowerCase().trim()),
           ),
-          onChanged: (value) =>
-              setState(() => query = value.toLowerCase().trim()),
         ),
-      ),
-      Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: Row(
-          children: [
-            Expanded(child: LibraryFilter(
-              label: 'Filter',
-              icon: Icons.tune_rounded,
-              accent: neonCyan,
-              value: activeFilter,
-              options: [
-                'All',
-                'Shows',
-                if (supportsMovies) 'Movies',
-                'With unwatched episodes',
-                'Completed',
-              ],
-              onSelected: (value) {
-                setState(() => filter = value);
-                perform(
-                  context,
-                  () => ref
-                      .read(databaseProvider)
-                      .setPreference('library.filter', value),
-                );
-              },
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: LibraryFilter(
-              label: 'Sort by',
-              icon: Icons.sort_rounded,
-              accent: neonViolet,
-              value: sort,
-              options: const [
-                'Date added',
-                'Title',
-                'Rating',
-                'Progress',
-              ],
-              onSelected: (value) {
-                setState(() => sort = value);
-                perform(
-                  context,
-                  () => ref
-                      .read(databaseProvider)
-                      .setPreference('library.sort', value),
-                );
-              },
-            )),
-          ],
-        ),
-      ),
-      Expanded(
-        child: ref
-            .watch(libraryProvider)
-            .when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) =>
-                  FailureView(e, () => ref.invalidate(libraryProvider)),
-              data: (snapshot) {
-                double fraction(LibraryEntry entry) => entry.title.isTv
-                    ? (snapshot.series.containsKey(entry.title.id)
-                          ? snapshot.progress(entry.title.id).fraction
-                          : 0)
-                    : (snapshot.watched.containsKey(entry.title.key) ? 1 : 0);
-                String state(LibraryEntry entry) => entry.title.isTv
-                    ? (snapshot.series.containsKey(entry.title.id)
-                          ? snapshot.progress(entry.title.id).state
-                          : 'Incomplete data')
-                    : (snapshot.watched.containsKey(entry.title.key)
-                          ? 'Completed'
-                          : 'Not started');
-                final entries =
-                    snapshot.entries.where((e) {
-                      if (!'${e.title.title} ${e.title.originalTitle}'
-                          .toLowerCase()
-                          .contains(query)) {
-                        return false;
-                      }
-                      return switch (activeFilter) {
-                        'Shows' => e.title.isTv,
-                        'Movies' => !e.title.isTv,
-                        'With unwatched episodes' =>
-                          e.title.isTv &&
-                              snapshot.series.containsKey(e.title.id) &&
-                              snapshot.progress(e.title.id).unseen.isNotEmpty,
-                        'Completed' => state(e) == 'Completed',
-                        _ => true,
-                      };
-                    }).toList()..sort(
-                      (a, b) => switch (sort) {
-                        'Title' => a.title.title.toLowerCase().compareTo(
-                          b.title.title.toLowerCase(),
-                        ),
-                        'Rating' => b.title.rating.compareTo(a.title.rating),
-                        'Progress' => fraction(b).compareTo(fraction(a)),
-                        _ => b.addedAt.compareTo(a.addedAt),
-                      },
-                    );
-                if (entries.isEmpty) {
-                  return Center(
-                    child: Text(
-                      snapshot.entries.isEmpty
-                          ? 'Your library is empty. Add a title from Search.'
-                          : 'No titles match your filters.',
-                      textAlign: TextAlign.center,
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  itemCount: entries.length,
-                  itemBuilder: (context, i) {
-                    final entry = entries[i];
-                    return MediaTile(
-                      title: entry.title,
-                      progress: fraction(entry),
-                      subtitle:
-                          '${state(entry)} • ${(fraction(entry) * 100).round()}%\n${entry.title.statusLabel}',
-                      onTap: () => openTitle(context, entry.title),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: LibraryFilter(
+                  label: 'Filter',
+                  icon: Icons.tune_rounded,
+                  accent: neonCyan,
+                  value: activeFilter,
+                  options: [
+                    'All',
+                    'Shows',
+                    if (supportsMovies) 'Movies',
+                    'With unwatched episodes',
+                    'Completed',
+                  ],
+                  onSelected: (value) {
+                    setState(() => filter = value);
+                    perform(
+                      context,
+                      () => ref
+                          .read(databaseProvider)
+                          .setPreference('library.filter', value),
                     );
                   },
-                );
-              },
-            ),
-      ),
-    ],
-  );
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: LibraryFilter(
+                  label: 'Sort by',
+                  icon: Icons.sort_rounded,
+                  accent: neonViolet,
+                  value: sort,
+                  options: const ['Date added', 'Title', 'Rating', 'Progress'],
+                  onSelected: (value) {
+                    setState(() => sort = value);
+                    perform(
+                      context,
+                      () => ref
+                          .read(databaseProvider)
+                          .setPreference('library.sort', value),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ref
+              .watch(libraryProvider)
+              .when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, s) =>
+                    FailureView(e, () => ref.invalidate(libraryProvider)),
+                data: (snapshot) {
+                  double fraction(LibraryEntry entry) => entry.title.isTv
+                      ? (snapshot.series.containsKey(entry.title.id)
+                            ? snapshot.progress(entry.title.id).fraction
+                            : 0)
+                      : (snapshot.watched.containsKey(entry.title.key) ? 1 : 0);
+                  String state(LibraryEntry entry) => entry.title.isTv
+                      ? (snapshot.series.containsKey(entry.title.id)
+                            ? snapshot.progress(entry.title.id).state
+                            : 'Incomplete data')
+                      : (snapshot.watched.containsKey(entry.title.key)
+                            ? 'Completed'
+                            : 'Not started');
+                  final entries =
+                      snapshot.entries.where((e) {
+                        if (!'${e.title.title} ${e.title.originalTitle}'
+                            .toLowerCase()
+                            .contains(query)) {
+                          return false;
+                        }
+                        return switch (activeFilter) {
+                          'Shows' => e.title.isTv,
+                          'Movies' => !e.title.isTv,
+                          'With unwatched episodes' =>
+                            e.title.isTv &&
+                                snapshot.series.containsKey(e.title.id) &&
+                                snapshot.progress(e.title.id).unseen.isNotEmpty,
+                          'Completed' => state(e) == 'Completed',
+                          _ => true,
+                        };
+                      }).toList()..sort(
+                        (a, b) => switch (sort) {
+                          'Title' => a.title.title.toLowerCase().compareTo(
+                            b.title.title.toLowerCase(),
+                          ),
+                          'Rating' => b.title.rating.compareTo(a.title.rating),
+                          'Progress' => fraction(b).compareTo(fraction(a)),
+                          _ => b.addedAt.compareTo(a.addedAt),
+                        },
+                      );
+                  if (entries.isEmpty) {
+                    return Center(
+                      child: Text(
+                        snapshot.entries.isEmpty
+                            ? 'Your library is empty. Add a title from Search.'
+                            : 'No titles match your filters.',
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+                  return ListView.builder(
+                    itemCount: entries.length,
+                    itemBuilder: (context, i) {
+                      final entry = entries[i];
+                      return MediaTile(
+                        title: entry.title,
+                        progress: fraction(entry),
+                        subtitle:
+                            '${state(entry)} • ${(fraction(entry) * 100).round()}%\n${entry.title.statusLabel}',
+                        onTap: () => openTitle(context, entry.title),
+                      );
+                    },
+                  );
+                },
+              ),
+        ),
+      ],
+    );
   }
 }
 
@@ -371,9 +422,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             controller: input,
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => search(),
-            onChanged: (value) => ref.read(searchProvider.notifier).queryChanged(value),
+            onChanged: (value) =>
+                ref.read(searchProvider.notifier).queryChanged(value),
             decoration: InputDecoration(
-              labelText: searchLabel,
+              labelText: 'Search shows and movies', //searchLabel,
               helperText: 'Type at least 3 characters to search',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
@@ -386,10 +438,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         if (state.query.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Align(alignment: Alignment.centerLeft, child: Text(
-              catalog.capabilities.movies ? 'Popular shows & movies' : 'Popular shows',
-              style: Theme.of(context).textTheme.titleLarge,
-            )),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                catalog.capabilities.movies
+                    ? 'Popular shows & movies'
+                    : 'Popular shows',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
           ),
         if (state.loading) const LinearProgressIndicator(),
         if (state.error != null)
@@ -412,7 +469,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ? Center(
                   child: Text(
                     state.loading
-                        ? (state.query.isEmpty ? 'Loading popular titles…' : 'Searching…')
+                        ? (state.query.isEmpty
+                              ? 'Loading popular titles…'
+                              : 'Searching…')
                         : state.query.isEmpty
                         ? 'No popular titles available right now.'
                         : state.error == null

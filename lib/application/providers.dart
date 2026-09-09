@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/painting.dart';
 
 import '../data/database.dart';
 import '../data/alerts.dart';
@@ -16,13 +17,20 @@ final databaseProvider = Provider<AppDatabase>(
 final apiProvider = Provider<CatalogProvider>(
   (ref) => throw UnimplementedError('Override at startup'),
 );
+final tmdbAllowedProvider = FutureProvider<bool>(
+  (ref) => ref.watch(databaseProvider).tmdbContentAllowed(),
+);
 final episodeAlertsProvider = Provider((ref) => EpisodeAlerts());
-final alertErrorProvider = NotifierProvider<AlertError, String?>(AlertError.new);
+final alertErrorProvider = NotifierProvider<AlertError, String?>(
+  AlertError.new,
+);
+
 class AlertError extends Notifier<String?> {
   @override
   String? build() => null;
   void update(String? value) => state = value;
 }
+
 final seriesRepositoryProvider = Provider(
   (ref) =>
       SeriesRepository(ref.watch(apiProvider), ref.watch(databaseProvider)),
@@ -61,6 +69,18 @@ final libraryProvider =
     );
 
 class LibraryController extends AsyncNotifier<LibrarySnapshot> {
+  Future<void> maintainRetention() async {
+    final changed = await ref.read(databaseProvider).enforceTmdbRetention();
+    if (!changed) return;
+    await reload();
+    ref.invalidate(seriesDetailsProvider);
+    ref.invalidate(movieDetailsProvider);
+    ref.invalidate(searchProvider);
+    ref.invalidate(tmdbAllowedProvider);
+    PaintingBinding.instance.imageCache.clear();
+    PaintingBinding.instance.imageCache.clearLiveImages();
+  }
+
   @override
   Future<LibrarySnapshot> build() => _read();
   Future<LibrarySnapshot> _read() async {
@@ -80,10 +100,20 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
     final snapshot = await _read();
     state = AsyncData(snapshot);
     try {
-      await ref.read(episodeAlertsProvider).refresh(ref.read(databaseProvider), snapshot.series.values, snapshot.watched);
+      await ref
+          .read(episodeAlertsProvider)
+          .refresh(
+            ref.read(databaseProvider),
+            snapshot.series.values,
+            snapshot.watched,
+          );
       ref.read(alertErrorProvider.notifier).update(null);
     } catch (_) {
-      ref.read(alertErrorProvider.notifier).update('Alerts could not be updated. Check notification permissions in your device settings.');
+      ref
+          .read(alertErrorProvider.notifier)
+          .update(
+            'Alerts could not be updated. Check notification permissions in your device settings.',
+          );
     }
   }
 
@@ -139,9 +169,20 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
   }
 
   Future<SyncReport> sync({bool onlyStale = false}) async {
+    final removed = await ref.read(databaseProvider).enforceTmdbRetention();
     final catalog = ref.read(apiProvider);
     if (catalog is CatalogRouter) {
       await catalog.refreshConfiguration?.call();
+    }
+    // Publish purged data before waiting for any network refresh.
+    await reload();
+    ref.invalidate(tmdbAllowedProvider);
+    ref.invalidate(seriesDetailsProvider);
+    ref.invalidate(movieDetailsProvider);
+    if (removed || !await ref.read(databaseProvider).tmdbContentAllowed()) {
+      ref.invalidate(searchProvider);
+      PaintingBinding.instance.imageCache.clear();
+      PaintingBinding.instance.imageCache.clearLiveImages();
     }
     final result = await ref
         .read(syncRepositoryProvider)
@@ -189,9 +230,13 @@ class SearchController extends Notifier<SearchState> {
   Timer? _debounce;
   @override
   SearchState build() {
-    ref.onDispose(() { _debounce?.cancel(); _generation++; });
+    ref.onDispose(() {
+      _debounce?.cancel();
+      _generation++;
+    });
     return const SearchState();
   }
+
   void queryChanged(String input) {
     _debounce?.cancel();
     _generation++;
@@ -202,8 +247,12 @@ class SearchController extends Notifier<SearchState> {
     }
     // Invalidate old results immediately, before the debounce expires.
     state = SearchState(query: query, loading: true);
-    _debounce = Timer(const Duration(milliseconds: 350), () => search(query, null));
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => search(query, null),
+    );
   }
+
   Future<void> search(
     String query,
     MediaType? type, {

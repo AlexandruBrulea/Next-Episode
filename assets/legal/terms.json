@@ -1,0 +1,91 @@
+{
+  "updated": "September 9, 2026",
+  "sections": [
+    {
+      "title": "About these terms",
+      "body": "These terms describe the Next Episode service, provided by Alexandru Ionut Brulea, based in Romania. For support, complaints or questions, contact {{SUPPORT_EMAIL}}. The app helps you organize shows and movies and record viewing progress. These service terms operate alongside the software license applicable to your platform and do not waive mandatory legal rights.",
+      "links": [
+        {
+          "label": "Email support",
+          "url": "mailto:{{SUPPORT_EMAIL}}"
+        }
+      ]
+    },
+    {
+      "title": "A free personal organizer",
+      "body": "This version is free to use and includes no advertising, paid subscriptions or in-app purchases. It does not stream movies or episodes and does not provide access to paid viewing services. Your use must comply with applicable law and must not interfere with the app, its providers or the rights of others."
+    },
+    {
+      "title": "Software license and platform terms",
+      "body": "For the iOS app distributed through the Apple App Store, the Apple Standard End User License Agreement governs the software license. These service terms supplement it and do not replace it with a custom Apple EULA. Where these service terms conflict with that license on a software-licensing matter, the applicable Apple license governs, subject to mandatory law.",
+      "links": [
+        {
+          "label": "Apple Standard End User License Agreement",
+          "url": "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/"
+        }
+      ]
+    },
+    {
+      "title": "Use on Android and other platforms",
+      "body": "For versions distributed outside the Apple App Store, the publisher grants you a non-exclusive, non-transferable license to install and use the app for your personal use on devices you own or are authorized to use, subject to applicable distribution-store terms. This permission covers updates unless a separate license accompanies an update. Free access does not transfer ownership of the software or third-party content."
+    },
+    {
+      "title": "Software rights and permitted use",
+      "body": "Rights in the app remain with the publisher and the relevant licensors. Do not unlawfully redistribute or sell the app, remove rights notices, misuse access credentials or interfere with external services. Restrictions do not override rights granted by applicable law or an open-source license, including any legally permitted interoperability or reverse-engineering activity. Third-party software components retain their own licenses, available in Settings under About & data credits. This app license does not grant a separate license to redistribute TMDB content or use its API independently."
+    },
+    {
+      "title": "Catalog information and intellectual property",
+      "body": "Information and artwork are supplied through external catalog services. Titles, release dates, descriptions, ratings, cast information and images may be incomplete, inaccurate or change without notice. Availability of the catalog depends on those services.\n\nArtwork, trademarks and other third-party material remain subject to their respective rights holders' rights and applicable provider terms. Access through the app does not grant ownership of that material or permission to redistribute it. The app is independent of the studios, networks and services shown. If you believe material infringes your rights, contact support with enough information to identify it.",
+      "links": [
+        {
+          "label": "TMDB",
+          "url": "https://www.themoviedb.org"
+        },
+        {
+          "label": "TMDB API Terms of Use",
+          "url": "https://www.themoviedb.org/api-terms-of-use"
+        }
+      ]
+    },
+    {
+      "title": "Where to Watch",
+      "body": "Viewing availability is supplied by JustWatch through TMDB. The list combines services reported across regions and is not a promise that a title is available in your location. Listings may include subscription, free, ad-supported, rental and purchase options. Availability, prices, access requirements and catalogs can change. Check the external service before subscribing, renting or buying. Any transaction is with that service under its own terms; Next Episode does not process those payments."
+    },
+    {
+      "title": "Episode reminders",
+      "body": "Alerts are optional reminders based on available episode information and your chosen offset. Delivery depends on permissions, device scheduling, time settings and updated catalog information. The app cannot guarantee exact delivery or uninterrupted reminders. You can disable alerts in the app or in device settings."
+    },
+    {
+      "title": "Your local library",
+      "body": "Your library, progress and preferences are stored on your device. There is no publisher-operated account or cloud synchronization service in this version. Removing a title may preserve its watch history and cached information. Deleting app data can permanently remove your records. Backups, where available, are controlled by your device and backup provider; Next Episode does not guarantee recovery."
+    },
+    {
+      "title": "External links and privacy",
+      "body": "External websites and apps operate independently and apply their own terms and privacy policies. A link or service logo does not imply endorsement. Our Privacy Policy explains local storage, catalog requests, notifications and support correspondence. It is available in Settings."
+    },
+    {
+      "title": "Availability and your legal rights",
+      "body": "We aim to provide a useful, reliable app, but cannot promise error-free metadata, continuous third-party availability or compatibility with every device. Features may change as the app and external services evolve. Nothing in these terms excludes mandatory consumer rights or limits responsibility where doing so would be unlawful. Any applicable app-store license terms also continue to apply."
+    },
+    {
+      "title": "Maintenance, support and compatibility",
+      "body": "The publisher is the contact for app support and app-related complaints. Apple is not responsible for providing maintenance or support for this app. We may release fixes and compatibility updates, but do not promise support for every device or indefinite operation of external services. This does not exclude any update, conformity or other obligation required by applicable law. The supported system requirements are those shown for the version you download."
+    },
+    {
+      "title": "Ending use and service changes",
+      "body": "You may stop using the app at any time and delete it and its local data. For Apple-distributed software, termination of the software license is governed by the Apple Standard EULA. For other versions, the publisher may end the license for a material breach of its conditions, subject to applicable law and any required notice or opportunity to remedy the breach. Ending use does not remove records retained by independent services or device backups. Provider content or online features may become unavailable if access rights end. We do not remotely erase your device. Any discontinuation or material change remains subject to mandatory legal obligations."
+    },
+    {
+      "title": "Romanian law and consumer rights",
+      "body": "Romanian law governs these service terms. This choice does not deprive consumers of mandatory protections under the law of their habitual residence where those protections apply. Nothing here requires a consumer to bring a claim exclusively in Romania or removes any right to use a court or authority with jurisdiction under applicable law. The separate Apple Standard EULA has its own applicable-law provisions for the software license. Please contact support if you have a complaint; contacting us does not prevent you from exercising legal remedies."
+    },
+    {
+      "title": "Validity of these terms",
+      "body": "If a provision is found invalid or unenforceable, the other provisions remain effective to the extent permitted by law. A failure to enforce a provision on one occasion does not remove the right to enforce it later. Nothing in this document overrides mandatory consumer protections or the licenses of third-party software."
+    },
+    {
+      "title": "Changes and contact",
+      "body": "Revised terms will carry an updated date. Material changes will be communicated as required by applicable law. You can stop using the app at any time. Contact {{SUPPORT_EMAIL}} for support or questions about these terms."
+    }
+  ]
+}

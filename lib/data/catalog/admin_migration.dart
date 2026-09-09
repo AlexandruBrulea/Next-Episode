@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../../domain/catalog_provider.dart';
 import '../../domain/models.dart';
 import '../database.dart';
+import '../tmdb_retention.dart';
 import 'catalog_router.dart';
 import 'internal_catalog.dart';
 
@@ -156,6 +157,8 @@ class AdminMigration {
     Future<void> Function(int)? afterItem,
   }) async {
     await router.initialize();
+    await db.enforceTmdbRetention();
+    if (target == 'tmdb') await db.requireTmdbContent();
     final provider = router.modules[target];
     if (provider == null) {
       throw ArgumentError('Unknown administrative provider');
@@ -297,6 +300,10 @@ class AdminMigration {
               'Fetch failed; retry before activation. Cached data unchanged.',
         };
       }
+      final scrubber = TmdbScrubber(db.retentionClock(), enabled: await db.tmdbContentAllowed());
+      scrubber.scrub(fingerprint, obtained: db.retentionClock());
+      scrubber.scrub(staged, obtained: db.retentionClock(), legacyTitle: true);
+      if (scrubber.changed) throw StateError('Provider content expired during preparation');
       await db.customStatement(
         'INSERT OR REPLACE INTO admin_migration_items VALUES (?,?,?,?,?,?)',
         [
@@ -360,6 +367,7 @@ class AdminMigration {
     Future<void> Function(int)? afterWrite,
   }) async {
     await router.initialize();
+    await db.enforceTmdbRetention();
     await db.transaction(() async {
       final migration = await db
           .customSelect(
@@ -484,6 +492,7 @@ class AdminMigration {
   }
 
   Future<void> rollback(String deploymentId, {required int generation}) async {
+    await db.enforceTmdbRetention();
     await db.transaction(() async {
       final migration = await db
           .customSelect(

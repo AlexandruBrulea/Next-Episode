@@ -49,8 +49,9 @@ class SeriesRepository {
       });
       return Loaded(value);
     } catch (error) {
-      if (previous != null) {
-        return Loaded(previous, offline: true, warning: '$error');
+      final permitted = await cached(id);
+      if (permitted != null) {
+        return Loaded(permitted, offline: true, warning: '$error');
       }
       rethrow;
     }
@@ -75,9 +76,10 @@ class MoviesRepository {
       });
       return Loaded(value);
     } catch (error) {
-      if (old != null) {
+      final permitted = await db.cached('movie:$id');
+      if (permitted != null) {
         return Loaded(
-          TitleData(MediaType.movie, old.data),
+          TitleData(MediaType.movie, permitted.data),
           offline: true,
           warning: '$error',
         );
@@ -140,6 +142,10 @@ class SyncRepository {
   bool _running = false;
   SyncRepository(this.db, this.series, this.movies);
   static SyncChanges compare(SeriesBundle? before, SeriesBundle after) {
+    String metadata(TitleData title) => jsonEncode({
+      for (final entry in title.raw.entries)
+        if (entry.key != '_tmdb_obtained_at') entry.key: entry.value,
+    });
     final old = {for (final e in before?.episodes ?? <EpisodeData>[]) e.id: e};
     final current = {for (final e in after.episodes) e.id: e};
     final oldSeasons = before?.seasons.map((s) => s.number).toSet() ?? <int>{};
@@ -159,8 +165,7 @@ class SyncRepository {
           .where((n) => !oldSeasons.contains(n))
           .toList(),
       before != null && before.title.status != after.title.status,
-      before != null &&
-          jsonEncode(before.title.raw) != jsonEncode(after.title.raw),
+      before != null && metadata(before.title) != metadata(after.title),
     );
   }
 
@@ -191,9 +196,7 @@ class SyncRepository {
           } else {
             final result = await movies.load(entry.title.id, refresh: true);
             if (result.offline) {
-              throw const ApiFailure(
-                'Movie information could not be updated.',
-              );
+              throw const ApiFailure('Movie information could not be updated.');
             }
           }
         } catch (e) {
