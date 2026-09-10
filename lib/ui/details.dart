@@ -60,96 +60,100 @@ class TitleHeader extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      LayoutBuilder(
-        builder: (context, constraints) => Transform.translate(
-          offset: Offset(-horizontalPadding, 0),
+      SizedBox(
+        width: double.infinity,
+        child: ClipRRect(
+          borderRadius: BorderRadius.zero,
           child: SizedBox(
-            width: constraints.maxWidth + horizontalPadding * 2,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: SizedBox(
-                height: 320,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Poster(
-                      title.backdrop.isNotEmpty ? title.backdrop : title.poster,
-                      width: double.infinity,
-                      height: 320,
-                    ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Color(0xDD101522)],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 20,
-                      right: 20,
-                      bottom: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Chip(label: Text(title.isTv ? 'TV SHOW' : 'MOVIE')),
-                          Text(
-                            title.title,
-                            style: Theme.of(context).textTheme.headlineLarge
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+            height: 320,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Poster(
+                  title.backdrop.isNotEmpty ? title.backdrop : title.poster,
+                  width: double.infinity,
+                  height: 320,
                 ),
-              ),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0xDD101522)],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  right: 20,
+                  bottom: 20,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Chip(label: Text(title.isTv ? 'TV SHOW' : 'MOVIE')),
+                      Text(
+                        title.title,
+                        style: Theme.of(context).textTheme.headlineLarge
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
-      const SizedBox(height: 20),
-      if (string(title.raw['tagline']).isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Text(
-            string(title.raw['tagline']),
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(fontStyle: FontStyle.italic),
-          ),
-        ),
-      Wrap(
-        spacing: 18,
-        runSpacing: 8,
-        children: [
-          Text('★ ${title.ratingLabel}'),
-          Text(dateLabel(title.releaseDate)),
-          if (integer(title.raw['vote_count']) > 0)
-            Text('${integer(title.raw['vote_count'])} votes'),
-        ],
-      ),
-      const SizedBox(height: 14),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          Chip(label: Text(title.statusLabel)),
-          if (title.isTv) ...[
-            Chip(label: Text('${title.seasonCount} seasons')),
-            Chip(label: Text('${title.episodeCount} episodes')),
+      Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 20),
+            if (string(title.raw['tagline']).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  string(title.raw['tagline']),
+                  style: Theme.of(context).textTheme.bodyLarge
+                      ?.copyWith(fontStyle: FontStyle.italic),
+                ),
+              ),
+            Wrap(
+              spacing: 18,
+              runSpacing: 8,
+              children: [
+                Text('★ ${title.ratingLabel}'),
+                Text(dateLabel(title.releaseDate)),
+                if (integer(title.raw['vote_count']) > 0)
+                  Text('${integer(title.raw['vote_count'])} votes'),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Chip(label: Text(title.statusLabel)),
+                if (title.isTv) ...[
+                  Chip(label: Text('${title.seasonCount} seasons')),
+                  Chip(label: Text('${title.episodeCount} episodes')),
+                ],
+                for (final genre in title.genres) Chip(label: Text(genre)),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              title.overview,
+              style: Theme.of(context).textTheme.bodyLarge
+                  ?.copyWith(height: 1.55),
+            ),
+            const SizedBox(height: 20),
+            LibraryAction(title),
+            const SizedBox(height: 28),
           ],
-          for (final genre in title.genres) Chip(label: Text(genre)),
-        ],
+        ),
       ),
-      const SizedBox(height: 20),
-      Text(
-        title.overview,
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.55),
-      ),
-      const SizedBox(height: 20),
-      LibraryAction(title),
-      const SizedBox(height: 28),
     ],
   );
 }
@@ -166,14 +170,17 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
   bool details = false;
   @override
   Widget build(BuildContext context) => Scaffold(
+    extendBodyBehindAppBar: true,
     appBar: AppBar(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
       automaticallyImplyLeading: false,
       leading: IconButton(
         tooltip: 'Close',
         icon: const Icon(Icons.close),
         onPressed: () => Navigator.pop(context),
       ),
-      title: const Text('Show details'),
     ),
     body: ref
         .watch(seriesDetailsProvider(widget.id))
@@ -203,123 +210,142 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
             );
             return ListView(
               primary: true,
-              padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
-              children: [
-                if (loaded.offline)
-                  const Text('Offline: showing the last saved version.'),
-                TitleHeader(title),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(
-                      value: false,
-                      label: Text('Episodes'),
-                      icon: Icon(Icons.play_circle_outline),
-                    ),
-                    ButtonSegment(
-                      value: true,
-                      label: Text('Details'),
-                      icon: Icon(Icons.info_outline),
-                    ),
-                  ],
-                  selected: {details},
-                  onSelectionChanged: (value) =>
-                      setState(() => details = value.single),
-                ),
-                const SizedBox(height: 24),
-                if (details)
-                  TitleInformation(title)
-                else ...[
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final item in seasons)
-                          Padding(
-                            padding: const EdgeInsets.only(right: 10),
-                            child: ChoiceChip(
-                              label: Text(
-                                item.number == 0
-                                    ? 'Specials'
-                                    : 'S${item.number}',
-                              ),
-                              selected: season?.number == item.number,
-                              onSelected: (_) =>
-                                  setState(() => selectedSeason = item.number),
+              padding: const EdgeInsets.only(bottom: 40),
+              children:
+                  [
+                        if (loaded.offline)
+                          const Text(
+                            'Offline: showing the last saved version.',
+                          ),
+                        TitleHeader(title),
+                        SegmentedButton<bool>(
+                          segments: const [
+                            ButtonSegment(
+                              value: false,
+                              label: Text('Episodes'),
+                              icon: Icon(Icons.play_circle_outline),
+                            ),
+                            ButtonSegment(
+                              value: true,
+                              label: Text('Details'),
+                              icon: Icon(Icons.info_outline),
+                            ),
+                          ],
+                          selected: {details},
+                          onSelectionChanged: (value) =>
+                              setState(() => details = value.single),
+                        ),
+                        const SizedBox(height: 24),
+                        if (details)
+                          TitleInformation(title)
+                        else ...[
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (final item in seasons)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 10),
+                                    child: ChoiceChip(
+                                      label: Text(
+                                        item.number == 0
+                                            ? 'Specials'
+                                            : 'S${item.number}',
+                                      ),
+                                      selected: season?.number == item.number,
+                                      onSelected: (_) => setState(
+                                        () => selectedSeason = item.number,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text(
-                    '${progress.unseen.length} episodes to watch',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 10),
-                  LinearProgressIndicator(value: progress.fraction),
-                  const SizedBox(height: 20),
-                  if (season == null)
-                    const Text('No seasons available.')
-                  else ...[
-                    Text(
-                      season.overview,
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    const SizedBox(height: 16),
-                    if (saved) SeasonActions(season: season),
-                    if (season.episodes.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text('Episodes have not been announced yet.'),
-                      ),
-                    for (final episode in [
-                      ...season.episodes,
-                    ]..sort(episodeOrder)) ...[
-                      ListTile(
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                        leading: IconButton(
-                          tooltip: watched.containsKey(episode.key)
-                              ? 'Mark as unwatched'
-                              : 'Mark as watched',
-                          icon: Icon(
-                            watched.containsKey(episode.key)
-                                ? Icons.check_circle
-                                : Icons.radio_button_unchecked,
+                          const SizedBox(height: 20),
+                          Text(
+                            '${progress.unseen.length} episodes to watch',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          onPressed:
-                              saved &&
-                                  (episode.released(DateTime.now()) ||
-                                      watched.containsKey(episode.key))
-                              ? () => perform(
-                                  context,
-                                  () => markEpisodeWithConfirmation(
-                                    context,
-                                    ref,
-                                    episode,
-                                    !watched.containsKey(episode.key),
+                          const SizedBox(height: 10),
+                          LinearProgressIndicator(value: progress.fraction),
+                          const SizedBox(height: 20),
+                          if (season == null)
+                            const Text('No seasons available.')
+                          else ...[
+                            Text(
+                              season.overview,
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                            const SizedBox(height: 16),
+                            if (saved) SeasonActions(season: season),
+                            if (season.episodes.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Text(
+                                  'Episodes have not been announced yet.',
+                                ),
+                              ),
+                            for (final episode in [
+                              ...season.episodes,
+                            ]..sort(episodeOrder)) ...[
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                leading: IconButton(
+                                  tooltip: watched.containsKey(episode.key)
+                                      ? 'Mark as unwatched'
+                                      : 'Mark as watched',
+                                  icon: Icon(
+                                    watched.containsKey(episode.key)
+                                        ? Icons.check_circle
+                                        : Icons.radio_button_unchecked,
                                   ),
-                                )
-                              : null,
-                        ),
-                        title: Text(episode.title),
-                        subtitle: Text(
-                          '${episode.code} · ${dateLabel(episode.airDate)}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => openScreen(
-                          context,
-                          EpisodeScreen(
-                            title: title,
-                            episode: episode,
-                            fromSeries: true,
-                          ),
-                        ),
-                      ),
-                      const Divider(height: 1),
-                    ],
-                  ],
-                ],
-              ],
+                                  onPressed:
+                                      saved &&
+                                          (episode.released(DateTime.now()) ||
+                                              watched.containsKey(episode.key))
+                                      ? () => perform(
+                                          context,
+                                          () => markEpisodeWithConfirmation(
+                                            context,
+                                            ref,
+                                            episode,
+                                            !watched.containsKey(episode.key),
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                title: Text(episode.title),
+                                subtitle: Text(
+                                  '${episode.code} · ${dateLabel(episode.airDate)}',
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => openScreen(
+                                  context,
+                                  EpisodeScreen(
+                                    title: title,
+                                    episode: episode,
+                                    fromSeries: true,
+                                  ),
+                                ),
+                              ),
+                              const Divider(height: 1),
+                            ],
+                          ],
+                        ],
+                      ]
+                      .map(
+                        (child) => child is TitleHeader
+                            ? child
+                            : Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                child: child,
+                              ),
+                      )
+                      .toList(),
             );
           },
         ),
@@ -665,7 +691,18 @@ class MovieScreen extends ConsumerWidget {
   const MovieScreen({super.key, required this.id});
   @override
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
-    appBar: AppBar(title: const Text('Movie details')),
+    extendBodyBehindAppBar: true,
+    appBar: AppBar(
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        tooltip: 'Close',
+        icon: const Icon(Icons.close),
+        onPressed: () => Navigator.pop(context),
+      ),
+    ),
     body: ref
         .watch(movieDetailsProvider(id))
         .when(
@@ -679,43 +716,57 @@ class MovieScreen extends ConsumerWidget {
             final markedAt = snapshot?.watched[title.key];
             return ListView(
               primary: true,
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (loaded.offline)
-                  const Text('Offline: showing the last saved version.'),
-                TitleHeader(title, horizontalPadding: 16),
-                InfoLine(
-                  'Runtime',
-                  title.runtimes.first == 0
-                      ? 'Unavailable'
-                      : '${title.runtimes.first} min',
-                ),
-                InfoLine('Director', title.directors.join(', ')),
-                InfoLine(
-                  'Cast',
-                  title.cast
+              padding: const EdgeInsets.only(bottom: 16),
+              children:
+                  [
+                        if (loaded.offline)
+                          const Text(
+                            'Offline: showing the last saved version.',
+                          ),
+                        TitleHeader(title, horizontalPadding: 16),
+                        InfoLine(
+                          'Runtime',
+                          title.runtimes.first == 0
+                              ? 'Unavailable'
+                              : '${title.runtimes.first} min',
+                        ),
+                        InfoLine('Director', title.directors.join(', ')),
+                        InfoLine(
+                          'Cast',
+                          title.cast
+                              .map(
+                                (e) =>
+                                    '${string(e['name'])} (${string(e['character'])})',
+                              )
+                              .join(', '),
+                        ),
+                        InfoLine(
+                          'Watch status',
+                          markedAt == null
+                              ? 'Unwatched'
+                              : 'Watched • ${dateLabel(markedAt)}',
+                        ),
+                        if (snapshot?.contains(title.key) ?? false)
+                          ActionButton(
+                            label: markedAt == null
+                                ? 'Mark as watched'
+                                : 'Mark as unwatched',
+                            action: () => ref
+                                .read(libraryProvider.notifier)
+                                .markMovie(id, markedAt == null),
+                          ),
+                      ]
                       .map(
-                        (e) =>
-                            '${string(e['name'])} (${string(e['character'])})',
+                        (child) => child is TitleHeader
+                            ? child
+                            : Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                child: child,
+                              ),
                       )
-                      .join(', '),
-                ),
-                InfoLine(
-                  'Watch status',
-                  markedAt == null
-                      ? 'Unwatched'
-                      : 'Watched • ${dateLabel(markedAt)}',
-                ),
-                if (snapshot?.contains(title.key) ?? false)
-                  ActionButton(
-                    label: markedAt == null
-                        ? 'Mark as watched'
-                        : 'Mark as unwatched',
-                    action: () => ref
-                        .read(libraryProvider.notifier)
-                        .markMovie(id, markedAt == null),
-                  ),
-              ],
+                      .toList(),
             );
           },
         ),

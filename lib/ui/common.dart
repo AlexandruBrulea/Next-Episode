@@ -85,9 +85,11 @@ void openScreen(BuildContext context, Widget screen) {
     context: context,
     isScrollControlled: true,
     enableDrag: false,
-    useSafeArea: true,
+    useSafeArea: false,
     backgroundColor: Colors.transparent,
-    constraints: const BoxConstraints(maxWidth: 920),
+    constraints: BoxConstraints.tightFor(
+      width: MediaQuery.sizeOf(context).width,
+    ),
     builder: (context) => FractionallySizedBox(
       heightFactor: 0.94,
       alignment: Alignment.bottomCenter,
@@ -95,7 +97,18 @@ void openScreen(BuildContext context, Widget screen) {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         child: ColoredBox(
           color: Theme.of(context).colorScheme.surface,
-          child: screen,
+          child: MediaQuery.removePadding(
+            context: context,
+            removeLeft: true,
+            removeRight: true,
+            child: SafeArea(
+              top: true,
+              bottom: true,
+              left: false,
+              right: false,
+              child: screen,
+            ),
+          ),
         ),
       ),
     ),
