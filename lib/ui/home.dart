@@ -98,7 +98,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'NEXT EPISODE',
+            'NEXT EPISODE TRACKER',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,

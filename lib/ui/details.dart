@@ -54,49 +54,58 @@ class LibraryAction extends ConsumerWidget {
 
 class TitleHeader extends StatelessWidget {
   final TitleData title;
-  const TitleHeader(this.title, {super.key});
+  final double horizontalPadding;
+  const TitleHeader(this.title, {super.key, this.horizontalPadding = 20});
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: SizedBox(
-          height: 320,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Poster(
-                title.backdrop.isNotEmpty ? title.backdrop : title.poster,
-                width: double.infinity,
+      LayoutBuilder(
+        builder: (context, constraints) => Transform.translate(
+          offset: Offset(-horizontalPadding, 0),
+          child: SizedBox(
+            width: constraints.maxWidth + horizontalPadding * 2,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: SizedBox(
                 height: 320,
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0xDD101522)],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 20,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Stack(
+                  fit: StackFit.expand,
                   children: [
-                    Chip(label: Text(title.isTv ? 'TV SHOW' : 'MOVIE')),
-                    Text(
-                      title.title,
-                      style: Theme.of(context).textTheme.headlineLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                    Poster(
+                      title.backdrop.isNotEmpty ? title.backdrop : title.poster,
+                      width: double.infinity,
+                      height: 320,
+                    ),
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Color(0xDD101522)],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 20,
+                      right: 20,
+                      bottom: 20,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Chip(label: Text(title.isTv ? 'TV SHOW' : 'MOVIE')),
+                          Text(
+                            title.title,
+                            style: Theme.of(context).textTheme.headlineLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -530,7 +539,9 @@ class EpisodeScreen extends ConsumerWidget {
     final snapshot = ref.watch(libraryProvider).asData?.value;
     final title = snapshot?.series[this.title.id]?.title ?? this.title;
     final obtained = DateTime.tryParse(string(title.raw[tmdbObtainedKey]));
-    final expired = title.provider == 'tmdb' && obtained != null &&
+    final expired =
+        title.provider == 'tmdb' &&
+        obtained != null &&
         !DateTime.now().toUtc().isBefore(tmdbExpiry(obtained));
     final current =
         snapshot?.series[title.id]?.episodes
@@ -540,7 +551,8 @@ class EpisodeScreen extends ConsumerWidget {
     final entry = snapshot?.entries
         .where((e) => e.title.key == title.key)
         .firstOrNull;
-    if (expired || entry?.title.raw['content_unavailable'] == true ||
+    if (expired ||
+        entry?.title.raw['content_unavailable'] == true ||
         (title.provider == 'tmdb' &&
             ref.watch(tmdbAllowedProvider).asData?.value != true)) {
       return Scaffold(
@@ -671,7 +683,7 @@ class MovieScreen extends ConsumerWidget {
               children: [
                 if (loaded.offline)
                   const Text('Offline: showing the last saved version.'),
-                TitleHeader(title),
+                TitleHeader(title, horizontalPadding: 16),
                 InfoLine(
                   'Runtime',
                   title.runtimes.first == 0

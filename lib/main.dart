@@ -66,7 +66,7 @@ class NextEpisodeApp extends StatelessWidget {
   const NextEpisodeApp({super.key});
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Next Episode',
+    title: 'Next Episode Tracker',
     locale: const Locale('en', 'US'),
     debugShowCheckedModeBanner: false,
     theme: nextEpisodeTheme(),

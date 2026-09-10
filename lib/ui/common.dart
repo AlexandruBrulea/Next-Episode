@@ -84,19 +84,18 @@ void openScreen(BuildContext context, Widget screen) {
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    enableDrag: false,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
     constraints: const BoxConstraints(maxWidth: 920),
-    builder: (context) => DraggableScrollableSheet(
-      initialChildSize: 0.94,
-      minChildSize: 0.35,
-      maxChildSize: 1,
-      expand: false,
-      builder: (context, controller) => ClipRRect(
+    builder: (context) => FractionallySizedBox(
+      heightFactor: 0.94,
+      alignment: Alignment.bottomCenter,
+      child: ClipRRect(
         borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         child: ColoredBox(
           color: Theme.of(context).colorScheme.surface,
-          child: PrimaryScrollController(controller: controller, child: screen),
+          child: screen,
         ),
       ),
     ),
@@ -113,23 +112,27 @@ class Poster extends StatelessWidget {
       width: width,
       height: height,
       child: const DecoratedBox(
-        decoration: BoxDecoration(gradient: LinearGradient(
-          colors: [Color(0xFF213A54), Color(0xFF292044)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        )),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF213A54), Color(0xFF292044)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
         child: Icon(Icons.movie_outlined, color: neonViolet),
       ),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: path.isEmpty ? placeholder : Image.network(
-      path,
-      width: width,
-      height: height,
-      fit: BoxFit.cover,
-      errorBuilder: (_, error, stack) => placeholder,
-      ),
+      child: path.isEmpty
+          ? placeholder
+          : Image.network(
+              path,
+              width: width,
+              height: height,
+              fit: BoxFit.cover,
+              errorBuilder: (_, error, stack) => placeholder,
+            ),
     );
   }
 }
@@ -228,54 +231,98 @@ class MediaTile extends StatelessWidget {
               children: [
                 Poster(title.poster, width: 68, height: 102),
                 const SizedBox(width: 16),
-                Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: (title.isTv ? neonCyan : neonViolet).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: (title.isTv ? neonCyan : neonViolet).withValues(alpha: 0.3)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (title.isTv ? neonCyan : neonViolet)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: (title.isTv ? neonCyan : neonViolet)
+                                    .withValues(alpha: 0.3),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  title.isTv
+                                      ? Icons.tv_rounded
+                                      : Icons.local_movies_rounded,
+                                  size: 14,
+                                  color: title.isTv ? neonCyan : neonViolet,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  title.isTv ? 'SHOW' : 'MOVIE',
+                                  style: TextStyle(
+                                    color: title.isTv ? neonCyan : neonViolet,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(title.isTv ? Icons.tv_rounded : Icons.local_movies_rounded,
-                              size: 14, color: title.isTv ? neonCyan : neonViolet),
-                            const SizedBox(width: 5),
-                            Text(title.isTv ? 'SHOW' : 'MOVIE', style: TextStyle(
-                              color: title.isTv ? neonCyan : neonViolet,
-                              fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1,
-                            )),
-                          ]),
-                        ),
-                        Text('${title.releaseDate?.year ?? '—'}', style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(children: [
-                      const Icon(Icons.star_rounded, color: Color(0xFFF3CC7A), size: 17),
-                      const SizedBox(width: 4),
-                      Text(title.ratingLabel, style: Theme.of(context).textTheme.labelMedium),
-                    ]),
-                    if (subtitle != null) ...[
+                          Text(
+                            '${title.releaseDate?.year ?? '—'}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
-                      Text(subtitle!, style: Theme.of(context).textTheme.bodySmall),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFFF3CC7A),
+                            size: 17,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            title.ratingLabel,
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ],
+                      ),
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          subtitle!,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
-                  ],
-                )),
+                  ),
+                ),
                 if (trailing != null) ...[const SizedBox(width: 8), trailing!],
               ],
             ),
             if (progress != null) ...[
               const SizedBox(height: 16),
-              LinearProgressIndicator(value: progress!.clamp(0.0, 1.0).toDouble()),
+              LinearProgressIndicator(
+                value: progress!.clamp(0.0, 1.0).toDouble(),
+              ),
             ],
           ],
         ),
@@ -290,9 +337,21 @@ class InfoLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 7),
-    child: Text.rich(TextSpan(children: [
-      TextSpan(text: '$label  ', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-      TextSpan(text: value.isEmpty ? 'Unavailable' : value, style: const TextStyle(fontWeight: FontWeight.w500)),
-    ])),
+    child: Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$label  ',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          TextSpan(
+            text: value.isEmpty ? 'Unavailable' : value,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    ),
   );
 }
