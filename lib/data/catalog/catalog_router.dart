@@ -190,7 +190,8 @@ class CatalogRouter extends CatalogProvider {
             integer(cache.data['total_pages'], 1),
           );
     if (cache != null &&
-        DateTime.now().difference(cache.fetchedAt) < const Duration(hours: 12)) {
+        DateTime.now().difference(cache.fetchedAt) <
+            const Duration(hours: 12)) {
       return saved()!;
     }
     try {
@@ -272,8 +273,9 @@ class CatalogRouter extends CatalogProvider {
       });
     } on CatalogConflict catch (e) {
       await db.administrativeConflict(old.key, e.toString());
-      throw const ApiFailure(
-        'Your saved data is safe. Some information could not be updated.',
+      throw ApiFailure(
+        'The episode listing changed and could not be safely matched to your saved progress. '
+        'The previous listing has been kept. Reference: ${e.code}.',
       );
     }
   }

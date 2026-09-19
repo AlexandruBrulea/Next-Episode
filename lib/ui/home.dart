@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
+import '../data/repositories.dart';
 import '../domain/models.dart';
 import 'common.dart';
 import 'details.dart';
@@ -52,6 +53,39 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   String? syncMessage;
+  List<SyncIssue> syncIssues = const [];
+  void showSyncDetails() {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Library update details'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text(
+                '${syncIssues.length} titles could not be updated. Your watched progress has been kept.',
+              ),
+              for (final issue in syncIssues)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(issue.title),
+                  subtitle: SelectableText(issue.message),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool syncing = false;
   @override
   void initState() {
@@ -75,12 +109,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           .read(libraryProvider.notifier)
           .sync(onlyStale: true);
       if (mounted) {
-        setState(
-          () => syncMessage = report.errors.isNotEmpty ? report.message : null,
-        );
+        setState(() {
+          syncMessage = report.errors.isNotEmpty ? report.message : null;
+          syncIssues = report.issues;
+        });
       }
     } catch (e) {
-      if (mounted) setState(() => syncMessage = publicError(e));
+      if (mounted) {
+        setState(() {
+          syncMessage = publicError(e);
+          syncIssues = const [];
+        });
+      }
     } finally {
       if (mounted) setState(() => syncing = false);
       scheduleRetention();
@@ -142,6 +182,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           MaterialBanner(
             content: Text(syncMessage!),
             actions: [
+              if (syncIssues.isNotEmpty)
+                TextButton(
+                  onPressed: showSyncDetails,
+                  child: const Text('Details'),
+                ),
               TextButton(
                 onPressed: () => setState(() => syncMessage = null),
                 child: const Text('Close'),

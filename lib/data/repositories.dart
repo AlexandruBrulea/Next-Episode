@@ -81,7 +81,9 @@ class MoviesRepository {
         return Loaded(
           TitleData(MediaType.movie, permitted.data),
           offline: true,
-          warning: '$error',
+          warning: error is ApiFailure
+              ? error.message
+              : 'Movie information could not be updated.',
         );
       }
       rethrow;
@@ -130,10 +132,21 @@ class SyncReport {
   final Set<String> refreshedKeys;
   final List<SyncChanges> changes;
   final List<String> errors;
-  const SyncReport(this.changes, this.errors, {this.refreshedKeys = const {}});
+  final List<SyncIssue> issues;
+  const SyncReport(
+    this.changes,
+    this.errors, {
+    this.refreshedKeys = const {},
+    this.issues = const [],
+  });
   String get message => errors.isEmpty
       ? 'Your library is up to date.'
       : 'Your data is safe. Some information could not be updated right now.';
+}
+
+class SyncIssue {
+  final String title, message;
+  const SyncIssue(this.title, this.message);
 }
 
 class SyncRepository {
@@ -175,6 +188,7 @@ class SyncRepository {
     _running = true;
     final changes = <SyncChanges>[];
     final errors = <String>[];
+    final issues = <SyncIssue>[];
     final refreshedKeys = <String>{};
     try {
       final entries = await db.library(); // Also removes expired cache rows.
@@ -210,16 +224,29 @@ class SyncRepository {
           } else {
             final result = await movies.load(entry.title.id, refresh: true);
             if (result.offline) {
-              throw const ApiFailure('Movie information could not be updated.');
+              throw ApiFailure(
+                result.warning ?? 'Movie information could not be updated.',
+              );
             }
           }
           refreshedKeys.add(entry.title.key);
         } catch (e) {
           await db.administrativeConflict(entry.title.key, '$e');
           errors.add('${entry.title.title}: $e');
+          issues.add(
+            SyncIssue(
+              entry.title.title,
+              e is ApiFailure ? e.message : 'An unexpected update error occurred. Please try again later.',
+            ),
+          );
         }
       }
-      return SyncReport(changes, errors, refreshedKeys: refreshedKeys);
+      return SyncReport(
+        changes,
+        errors,
+        refreshedKeys: refreshedKeys,
+        issues: issues,
+      );
     } finally {
       _running = false;
     }
