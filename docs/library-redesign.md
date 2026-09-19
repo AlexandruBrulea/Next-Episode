@@ -18,8 +18,16 @@
 - Enabling Episode alerts requests iOS alert, sound and badge authorization.
   The settings screen links to the native notification settings on iOS 16.0+
   and app settings on earlier supported versions. iOS owns these switches;
-  the app cannot override a user's choice. A badge of 1 means a new reminder,
-  and clears when the app becomes active, including the scene lifecycle.
+  the app cannot override a user's choice. App icon badge is an independent iOS
+  toggle (badge-only permission), counting released unwatched regular episodes,
+  matching To watch. Movies, specials, unknown/future dates and unavailable
+  catalog data are excluded. Existing alert users inherit badge enabled.
+  The badge survives app activation and clears only at zero or when disabled.
+  Library changes and daily sync recalculate it locally. Up to 30 badge-only
+  notifications update known release dates/cache expirations while closed;
+  remaining slots (60 total) hold audible reminders. These use projected counts,
+  never a fixed 1. New/changed release dates require opening/syncing the app;
+  there is no server push or unlimited background catalog refresh.
 
 ## Release checks
 
@@ -30,7 +38,8 @@ iPhone notification controls require the normal Xcode/Codemagic/TestFlight build
 they cannot be verified by Windows widget tests.
 
 In TestFlight, check a cold launch, app switcher, enabling notifications, changing
-banners/sounds/badges in Settings, receiving a reminder, and clearing its badge.
+banners/sounds/badges in Settings, receiving a reminder, and badge counts after
+watch/unwatch, removing a series, a known release day, and watching everything.
 
 ## App Store search images
 

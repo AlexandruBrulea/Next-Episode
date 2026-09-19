@@ -10,10 +10,11 @@ import 'database.dart';
 import 'tmdb_retention.dart';
 
 class AlertSettings {
-  final bool enabled, after;
+  final bool enabled, after, badgeEnabled;
   final int minutes, fallbackHour, fallbackMinute;
   const AlertSettings({
     this.enabled = false,
+    this.badgeEnabled = false,
     this.after = false,
     this.minutes = 15,
     this.fallbackHour = 20,
@@ -25,6 +26,7 @@ class AlertSettings {
     final data = jsonDecode(value) as Map;
     return AlertSettings(
       enabled: data['enabled'] == true,
+      badgeEnabled: (data['badgeEnabled'] ?? data['enabled']) == true,
       after: data['after'] == true,
       minutes: integer(data['minutes'], 15).clamp(0, 1439).toInt(),
       fallbackHour: integer(data['hour'], 20).clamp(0, 23).toInt(),
@@ -36,6 +38,7 @@ class AlertSettings {
     'alerts',
     jsonEncode({
       'enabled': enabled,
+      'badgeEnabled': badgeEnabled,
       'after': after,
       'minutes': minutes,
       'hour': fallbackHour,
@@ -96,7 +99,7 @@ class EpisodeAlerts {
     );
   }
 
-  Future<bool> requestPermission() async {
+  Future<bool> requestPermission({bool badgeOnly = false}) async {
     if (!supported) return false;
     await initialize();
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -111,7 +114,11 @@ class EpisodeAlerts {
             .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin
             >()
-            ?.requestPermissions(alert: true, sound: true, badge: true) ??
+            ?.requestPermissions(
+              alert: !badgeOnly,
+              sound: !badgeOnly,
+              badge: true,
+            ) ??
         false;
   }
 
@@ -137,19 +144,71 @@ class EpisodeAlerts {
     await initialize();
     final settings = await AlertSettings.load(db);
     await plugin.cancelAll();
-    if (!settings.enabled) return;
     final now = DateTime.now();
-    final pending = <({TitleData title, EpisodeData episode, DateTime time})>[];
+    final allowed = <SeriesBundle>[];
+    final expiries = <String, DateTime>{};
+    final tmdbAllowed = await db.tmdbContentAllowed();
     for (final bundle in series) {
-      DateTime? expiry;
+      if (bundle.title.raw['content_unavailable'] == true) continue;
       if (bundle.title.provider == 'tmdb') {
-        if (!await db.tmdbContentAllowed()) continue;
+        if (!tmdbAllowed) continue;
         final obtained = DateTime.tryParse(
           string(bundle.title.raw[tmdbObtainedKey]),
         );
         if (obtained == null) continue;
-        expiry = tmdbExpiry(obtained);
+        final expiry = tmdbExpiry(obtained);
+        if (!expiry.isAfter(now.toUtc())) continue;
+        expiries[bundle.title.key] = expiry;
       }
+      allowed.add(bundle);
+    }
+    int countAt(DateTime time) => unwatchedEpisodeCount(
+      allowed.where(
+        (b) => expiries[b.title.key]?.isAfter(time.toUtc()) ?? true,
+      ),
+      watched,
+      time,
+    );
+    var badgeSchedules = 0;
+    if (supportsSystemSettings) {
+      await settingsChannel.invokeMethod<bool>(
+        'setBadge',
+        settings.badgeEnabled ? countAt(now) : 0,
+      );
+      if (settings.badgeEnabled) {
+        // Badge-only notifications also work without audible episode reminders.
+        final changes = <DateTime>{
+          ...expiries.values,
+          for (final bundle in allowed)
+            for (final episode in bundle.episodes)
+              if (!episode.isSpecial &&
+                  !watched.containsKey(episode.key) &&
+                  episode.airDate != null)
+                day(episode.airDate!).toUtc(),
+        }.where((time) => time.isAfter(now.toUtc())).toList()..sort();
+        for (final time in changes.take(30)) {
+          await plugin.zonedSchedule(
+            id: 1000 + badgeSchedules++,
+            scheduledDate: tz.TZDateTime.from(time, tz.UTC),
+            notificationDetails: NotificationDetails(
+              iOS: DarwinNotificationDetails(
+                presentAlert: false,
+                presentSound: false,
+                presentBanner: false,
+                presentList: false,
+                presentBadge: true,
+                badgeNumber: countAt(time.toLocal()),
+              ),
+            ),
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          );
+        }
+      }
+    }
+    if (!settings.enabled) return;
+    final pending = <({TitleData title, EpisodeData episode, DateTime time})>[];
+    for (final bundle in allowed) {
+      final expiry = expiries[bundle.title.key];
       for (final episode in bundle.episodes) {
         if (episode.isSpecial || watched.containsKey(episode.key)) continue;
         final time = episodeAlertTime(episode, settings);
@@ -162,15 +221,15 @@ class EpisodeAlerts {
     }
     pending.sort((a, b) => a.time.compareTo(b.time));
     // Keep below iOS's 64 pending notification limit. Refill on each library sync.
-    for (var i = 0; i < pending.length && i < 60; i++) {
+    for (var i = 0; i < pending.length && i < 60 - badgeSchedules; i++) {
       final item = pending[i];
       await plugin.zonedSchedule(
         id: i + 1,
         title: item.title.title,
         body: '${item.episode.code} · ${item.episode.title}',
         scheduledDate: tz.TZDateTime.from(item.time, tz.UTC),
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
+        notificationDetails: NotificationDetails(
+          android: const AndroidNotificationDetails(
             'episode_alerts',
             'Episode alerts',
             channelDescription: 'Reminders for episodes in your library',
@@ -180,12 +239,36 @@ class EpisodeAlerts {
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentSound: true,
-            presentBadge: true,
-            badgeNumber: 1,
+            presentBadge: settings.badgeEnabled,
+            badgeNumber: settings.badgeEnabled
+                ? countAt(item.time.toLocal())
+                : null,
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
   }
+}
+
+/// Mirrors To watch: released regular episodes from the saved library only.
+int unwatchedEpisodeCount(
+  Iterable<SeriesBundle> series,
+  Map<String, DateTime> watched,
+  DateTime now,
+) {
+  final keys = <String>{};
+  for (final bundle in series) {
+    if (!bundle.title.isTv || bundle.title.raw['content_unavailable'] == true) {
+      continue;
+    }
+    for (final episode in bundle.episodes) {
+      if (!episode.isSpecial &&
+          episode.released(now) &&
+          !watched.containsKey(episode.key)) {
+        keys.add(episode.key);
+      }
+    }
+  }
+  return keys.length;
 }

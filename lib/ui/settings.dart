@@ -75,6 +75,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> save({
     bool? enabled,
+    bool? badgeEnabled,
     bool? after,
     int? minutes,
     TimeOfDay? fallback,
@@ -90,8 +91,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (enabled == true && !await alerts.requestPermission()) {
         throw Exception('Permission denied');
       }
+      if (badgeEnabled == true &&
+          !await alerts.requestPermission(badgeOnly: true)) {
+        throw Exception('Permission denied');
+      }
       final next = AlertSettings(
         enabled: enabled ?? old.enabled,
+        badgeEnabled: badgeEnabled ?? old.badgeEnabled,
         after: after ?? old.after,
         minutes: minutes ?? old.minutes,
         fallbackHour: fallback?.hour ?? old.fallbackHour,
@@ -175,6 +181,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onTap: () => perform(context, alerts.openSystemSettings),
             ),
           if (value != null) ...[
+            if (alerts.supportsSystemSettings)
+              SwitchListTile(
+                title: const Text('App icon badge'),
+                subtitle: const Text(
+                  'Show the number of unwatched released episodes',
+                ),
+                value: value.badgeEnabled,
+                onChanged: busy ? null : (v) => save(badgeEnabled: v),
+              ),
             SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               title: const Text('Episode alerts'),
@@ -190,6 +205,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
             const SizedBox(height: 12),
             AlertTimePicker(
+              key: const ValueKey('alert-time-picker'),
               minutes: value.minutes,
               after: value.after,
               onChanged: saveTime,

@@ -19,6 +19,27 @@ import UserNotifications
     notificationSettingsChannel = FlutterMethodChannel(
       name: "next_episode/notification_settings", binaryMessenger: registrar.messenger())
     notificationSettingsChannel?.setMethodCallHandler { call, result in
+      if call.method == "setBadge" {
+        guard let count = call.arguments as? Int, count >= 0 else {
+          result(FlutterError(code: "invalid_badge", message: "Invalid badge count", details: nil))
+          return
+        }
+        DispatchQueue.main.async {
+          if #available(iOS 16.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(count) { error in
+              DispatchQueue.main.async {
+                if let error = error {
+                  result(FlutterError(code: "badge_failed", message: error.localizedDescription, details: nil))
+                } else { result(true) }
+              }
+            }
+          } else {
+            UIApplication.shared.applicationIconBadgeNumber = count
+            result(true)
+          }
+        }
+        return
+      }
       guard call.method == "open" else {
         result(FlutterMethodNotImplemented)
         return
@@ -36,13 +57,4 @@ import UserNotifications
     }
   }
 
-  override func applicationDidBecomeActive(_ application: UIApplication) {
-    super.applicationDidBecomeActive(application)
-    // The badge indicates a new reminder, not the size of the unwatched library.
-    if #available(iOS 16.0, *) {
-      UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
-    } else {
-      application.applicationIconBadgeNumber = 0
-    }
-  }
 }
