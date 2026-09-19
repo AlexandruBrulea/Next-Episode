@@ -24,7 +24,7 @@ import UserNotifications
         return
       }
       let address: String
-      if #available(iOS 15.4, *) {
+      if #available(iOS 16.0, *) {
         address = UIApplication.openNotificationSettingsURLString
       } else {
         address = UIApplication.openSettingsURLString

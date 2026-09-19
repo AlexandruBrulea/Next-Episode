@@ -16,7 +16,7 @@
 - LaunchScreen and the initial native Flutter view use opaque navy `#040C28`.
   The existing centered logo is retained.
 - Enabling Episode alerts requests iOS alert, sound and badge authorization.
-  The settings screen links to the native notification settings on iOS 15.4+
+  The settings screen links to the native notification settings on iOS 16.0+
   and app settings on earlier supported versions. iOS owns these switches;
   the app cannot override a user's choice. A badge of 1 means a new reminder,
   and clears when the app becomes active, including the scene lifecycle.
