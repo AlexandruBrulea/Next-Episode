@@ -10,6 +10,7 @@ import '../domain/catalog_provider.dart';
 
 import '../data/catalog/catalog_router.dart';
 import '../domain/models.dart';
+import '../domain/watch_time.dart';
 
 final databaseProvider = Provider<AppDatabase>(
   (ref) => throw UnimplementedError('Override at startup'),
@@ -57,10 +58,22 @@ class LibrarySnapshot {
   final List<LibraryEntry> entries;
   final Map<String, DateTime> watched;
   final Map<int, SeriesBundle> series;
-  const LibrarySnapshot(this.entries, this.watched, this.series);
+  LibrarySnapshot(this.entries, this.watched, this.series);
+  late final watchTime = WatchTimeSummary.calculate(entries, series, watched);
+  final Map<int, WatchProgress> _progress = {};
+  DateTime? _progressDay;
   bool contains(String key) => entries.any((e) => e.title.key == key);
-  WatchProgress progress(int id) =>
-      WatchProgress.calculate(series[id]!, watched, DateTime.now());
+  WatchProgress progress(int id) {
+    final now = DateTime.now();
+    if (_progressDay != day(now)) {
+      _progress.clear();
+      _progressDay = day(now);
+    }
+    return _progress.putIfAbsent(
+      id,
+      () => WatchProgress.calculate(series[id]!, watched, now),
+    );
+  }
 }
 
 final libraryProvider =
@@ -83,22 +96,51 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
 
   @override
   Future<LibrarySnapshot> build() => _read();
-  Future<LibrarySnapshot> _read() async {
+  Future<LibrarySnapshot> _read({Set<String>? changedKeys}) async {
     final entries = await ref.read(libraryRepositoryProvider).all();
     final watched = await ref.read(progressRepositoryProvider).all();
-    final series = <int, SeriesBundle>{};
-    for (final entry in entries.where((e) => e.title.isTv)) {
-      final bundle = await ref
-          .read(seriesRepositoryProvider)
-          .cached(entry.title.id);
-      if (bundle != null) series[entry.title.id] = bundle;
-    }
+    final previous = state.asData?.value;
+    final cachedKeys = changedKeys == null
+        ? null
+        : {
+            for (final row
+                in await ref
+                    .read(databaseProvider)
+                    .customSelect('SELECT key FROM cache')
+                    .get())
+              row.read<String>('key'),
+          };
+    final ids = changedKeys == null || previous == null
+        ? null
+        : {
+            for (final entry in entries)
+              if (entry.title.isTv &&
+                  (changedKeys.contains(entry.title.key) ||
+                      !previous.series.containsKey(entry.title.id)))
+                entry.title.id,
+          };
+    final series = <int, SeriesBundle>{
+      if (ids != null)
+        for (final entry in entries)
+          if (entry.title.isTv &&
+              !ids.contains(entry.title.id) &&
+              cachedKeys!.contains('series:${entry.title.id}') &&
+              entry.title.raw['content_unavailable'] != true &&
+              previous!.series.containsKey(entry.title.id))
+            entry.title.id: previous.series[entry.title.id]!,
+      ...await ref.read(databaseProvider).cachedLibrarySeries(ids: ids),
+    };
     return LibrarySnapshot(entries, watched, series);
   }
 
-  Future<void> reload() async {
-    final snapshot = await _read();
+  Future<void> reload({Set<String>? changedKeys}) async {
+    final snapshot = await _read(changedKeys: changedKeys);
     state = AsyncData(snapshot);
+    await _refreshAlerts(snapshot);
+  }
+
+  DateTime? _alertsDay;
+  Future<void> _refreshAlerts(LibrarySnapshot snapshot) async {
     try {
       await ref
           .read(episodeAlertsProvider)
@@ -108,6 +150,7 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
             snapshot.watched,
           );
       ref.read(alertErrorProvider.notifier).update(null);
+      _alertsDay = day(DateTime.now());
     } catch (_) {
       ref
           .read(alertErrorProvider.notifier)
@@ -169,17 +212,38 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
   }
 
   Future<SyncReport> sync({bool onlyStale = false}) async {
-    final removed = await ref.read(databaseProvider).enforceTmdbRetention();
+    final db = ref.read(databaseProvider);
+    final removed = await db.enforceTmdbRetention();
+    final before =
+        (await db.customSelect('SELECT total_changes() AS n').getSingle())
+            .read<int>('n');
     final catalog = ref.read(apiProvider);
     if (catalog is CatalogRouter) {
       await catalog.refreshConfiguration?.call();
     }
-    // Publish purged data before waiting for any network refresh.
-    await reload();
-    ref.invalidate(tmdbAllowedProvider);
-    ref.invalidate(seriesDetailsProvider);
-    ref.invalidate(movieDetailsProvider);
-    if (removed || !await ref.read(databaseProvider).tmdbContentAllowed()) {
+    final after =
+        (await db.customSelect('SELECT total_changes() AS n').getSingle())
+            .read<int>('n');
+    final disabled = !await db.tmdbContentAllowed();
+    final staleDisabled =
+        disabled &&
+        (state.asData?.value.entries.any(
+              (e) =>
+                  e.title.provider == 'tmdb' &&
+                  e.title.raw['content_unavailable'] != true,
+            ) ??
+            false);
+    // Configuration changes and purges must be visible before network refresh.
+    if (removed || before != after || staleDisabled) {
+      await reload();
+      ref.invalidate(tmdbAllowedProvider);
+      ref.invalidate(seriesDetailsProvider);
+      ref.invalidate(movieDetailsProvider);
+    }
+    if (_alertsDay != day(DateTime.now()) && state.asData != null) {
+      await _refreshAlerts(state.asData!.value);
+    }
+    if (removed || disabled) {
       ref.invalidate(searchProvider);
       PaintingBinding.instance.imageCache.clear();
       PaintingBinding.instance.imageCache.clearLiveImages();
@@ -187,9 +251,17 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
     final result = await ref
         .read(syncRepositoryProvider)
         .refresh(onlyStale: onlyStale);
-    await reload();
-    ref.invalidate(seriesDetailsProvider);
-    ref.invalidate(movieDetailsProvider);
+    if (result.refreshedKeys.isNotEmpty) {
+      await reload(changedKeys: result.refreshedKeys);
+      for (final key in result.refreshedKeys) {
+        final id = int.parse(key.split(':').last);
+        if (key.startsWith('tv:')) {
+          ref.invalidate(seriesDetailsProvider(id));
+        } else {
+          ref.invalidate(movieDetailsProvider(id));
+        }
+      }
+    }
     return result;
   }
 }
@@ -241,16 +313,13 @@ class SearchController extends Notifier<SearchState> {
     _debounce?.cancel();
     _generation++;
     final query = input.trim();
-    if (query.runes.length < 3) {
+    if (query.isEmpty) {
       search('', null);
       return;
     }
     // Invalidate old results immediately, before the debounce expires.
     state = SearchState(query: query, loading: true);
-    _debounce = Timer(
-      const Duration(milliseconds: 350),
-      () => search(query, null),
-    );
+    _debounce = Timer(const Duration(seconds: 3), () => search(query, null));
   }
 
   Future<void> search(
@@ -260,7 +329,6 @@ class SearchController extends Notifier<SearchState> {
   }) async {
     _debounce?.cancel();
     query = query.trim();
-    if (query.runes.length < 3) query = '';
     if (type == MediaType.movie && !ref.read(apiProvider).capabilities.movies) {
       type = null;
       more = false;

@@ -128,7 +128,7 @@ Details afișează network, created by și distribuție cu fotografii și person
 
 ## Search: căutare automată și titluri populare
 
-Căutarea pornește de la 3 caractere, după 350 ms fără tastare. Răspunsurile căutărilor anterioare sunt ignorate. La prima deschidere a paginii Search și când textul are mai puțin de 3 caractere, sunt afișate titlurile populare. TVmaze afișează seriale; TMDB combină seriale și filme, cu badge pentru fiecare tip.
+Căutarea pornește după 3 secunde fără tastare, inclusiv pentru titluri de unul sau două caractere. Fiecare modificare a textului repornește temporizarea; Enter/Search caută imediat și anulează temporizarea, fără o căutare duplicată. Răspunsurile căutărilor anterioare sunt ignorate. La prima deschidere a paginii Search și când textul este gol, sunt afișate titlurile populare. TVmaze afișează seriale; TMDB combină seriale și filme, cu badge pentru fiecare tip.
 
 TMDB folosește `/tv/popular` și `/movie/popular`. TVmaze nu are un endpoint public pentru popularitate: modulul citește primele 20 de seriale din [lista publică TVmaze](https://www.tvmaze.com/shows), apoi încarcă metadatele prin API. Această parte depinde de structura HTML a listei. Routerul păstrează rezultatele populare 12 ore și folosește cache-ul expirat dacă rețeaua eșuează. Prima încărcare TVmaze poate dura mai mult pentru a spația cererile API.
 

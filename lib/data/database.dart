@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
@@ -7,11 +9,76 @@ import 'package:drift/native.dart';
 import '../domain/models.dart';
 import 'tmdb_retention.dart';
 
+Future<R> _runWorker<Q, R>(R Function(Q) task, Q input) =>
+    Isolate.run(() => task(input));
+
+typedef _SeriesDecodeInput = ({
+  List<({String data, String fetchedAt})> rows,
+  bool enabled,
+  DateTime now,
+});
+
+Map<int, SeriesBundle> _decodeLibrarySeries(_SeriesDecodeInput input) {
+  final result = <int, SeriesBundle>{};
+  for (final row in input.rows) {
+    final data = Json.from(jsonDecode(row.data));
+    final obtained = DateTime.parse(row.fetchedAt);
+    final scrubber = TmdbScrubber(input.now, enabled: input.enabled);
+    scrubber.scrub(data, obtained: obtained);
+    if (scrubber.changed) continue;
+    final bundle = SeriesBundle.fromJson(stampTmdb(data, obtained));
+    result[bundle.title.id] = bundle;
+  }
+  return result;
+}
+
+typedef _RetentionInput = ({
+  List<Json> rows,
+  String table,
+  DateTime now,
+  bool enabled,
+});
+typedef _RetentionRow = ({int id, String? cleaned, DateTime? expiry});
+
+List<_RetentionRow> _scrubRetentionRows(_RetentionInput input) => [
+  for (final row in input.rows) _scrubRetentionRow(row, input),
+];
+
+_RetentionRow _scrubRetentionRow(Json row, _RetentionInput input) {
+  final scrubber = TmdbScrubber(input.now, enabled: input.enabled);
+  final cleaned = scrubber.scrub(
+    Json.from(jsonDecode(row['data'] as String)),
+    obtained: DateTime.tryParse(
+      '${row['fetched_at'] ?? row['updated_at'] ?? ''}',
+    ),
+    legacyTitle:
+        input.table != 'cache' || string(row['key']).startsWith('movie:'),
+  );
+  return (
+    id: row['retention_rowid'] as int,
+    cleaned: scrubber.changed ? jsonEncode(cleaned) : null,
+    expiry: scrubber.nextExpiry,
+  );
+}
+
 /// Explicit SQL keeps the small schema reviewable without generated code.
 /// All writes are parameterized; schemaVersion owns future migrations.
 class AppDatabase extends GeneratedDatabase {
+  final Object _transactionZone = Object();
+  @override
+  Future<T> transaction<T>(
+    Future<T> Function() action, {
+    bool requireNew = false,
+  }) => super.transaction(
+    () => runZoned(action, zoneValues: {_transactionZone: true}),
+    requireNew: requireNew,
+  );
   DateTime Function() retentionClock = DateTime.now;
   DateTime? nextTmdbExpiry;
+  int? _retentionChanges;
+  int? _retentionDataVersion;
+  bool? _retentionEnabled;
+  DateTime? _retentionCheckedAt;
   bool get tmdbBuildEnabled =>
       const bool.fromEnvironment('TMDB_CONTENT_ENABLED', defaultValue: true);
   Future<bool> tmdbContentAllowed() async =>
@@ -38,8 +105,25 @@ class AppDatabase extends GeneratedDatabase {
   /// Runs before public reads, also covers copies stored for administrative rollback.
   /// Only metadata changes; library membership, marks and internal identity slots survive.
   Future<bool> enforceTmdbRetention() async {
+    final nested = Zone.current[_transactionZone] == true;
     final now = retentionClock();
     final enabled = await tmdbContentAllowed();
+    final dataVersion = (await customSelect(
+      'PRAGMA data_version',
+    ).getSingle()).read<int>('data_version');
+    final changes = (await customSelect(
+      'SELECT total_changes() AS n',
+    ).getSingle()).read<int>('n');
+    if (!nested &&
+        _retentionDataVersion == dataVersion &&
+        _retentionChanges == changes &&
+        _retentionEnabled == enabled &&
+        _retentionCheckedAt != null &&
+        !now.isBefore(_retentionCheckedAt!) &&
+        (nextTmdbExpiry == null || now.toUtc().isBefore(nextTmdbExpiry!))) {
+      return false;
+    }
+    int? checkedChanges;
     DateTime? nextExpiry;
     void rememberExpiry(TmdbScrubber scrubber) {
       final expiry = scrubber.nextExpiry;
@@ -53,32 +137,32 @@ class AppDatabase extends GeneratedDatabase {
     await transaction(() async {
       await customStatement('PRAGMA secure_delete=ON');
       for (final table in ['library', 'catalog_titles', 'cache']) {
-        for (final row in await customSelect(
+        final rows = await customSelect(
           'SELECT rowid AS retention_rowid,* FROM $table',
-        ).get()) {
-          final scrubber = TmdbScrubber(now, enabled: enabled);
-          final raw = Json.from(jsonDecode(row.read<String>('data')));
-          final obtained = DateTime.tryParse(
-            '${row.data['fetched_at'] ?? row.data['updated_at'] ?? ''}',
-          );
-          final cleaned = scrubber.scrub(
-            raw,
-            obtained: obtained,
-            legacyTitle:
-                table != 'cache' ||
-                string(row.data['key']).startsWith('movie:'),
-          );
-          rememberExpiry(scrubber);
-          if (!scrubber.changed) continue;
+        ).get();
+        final input = (
+          rows: [for (final row in rows) Json.from(row.data)],
+          table: table,
+          now: now,
+          enabled: enabled,
+        );
+        final results = backgroundDecoding
+            ? await _runWorker(_scrubRetentionRows, input)
+            : _scrubRetentionRows(input);
+        for (final row in results) {
+          final expiry = row.expiry;
+          if (expiry != null &&
+              (nextExpiry == null || expiry.isBefore(nextExpiry!))) {
+            nextExpiry = expiry;
+          }
+          if (row.cleaned == null) continue;
           changed = true;
           if (table == 'cache') {
-            await customStatement('DELETE FROM cache WHERE rowid=?', [
-              row.read<int>('retention_rowid'),
-            ]);
+            await customStatement('DELETE FROM cache WHERE rowid=?', [row.id]);
           } else {
             await customStatement('UPDATE $table SET data=? WHERE rowid=?', [
-              jsonEncode(cleaned),
-              row.read<int>('retention_rowid'),
+              row.cleaned,
+              row.id,
             ]);
           }
         }
@@ -125,6 +209,10 @@ class AppDatabase extends GeneratedDatabase {
         if (enabled &&
             obtained != null &&
             now.toUtc().isBefore(tmdbExpiry(obtained))) {
+          final expiry = tmdbExpiry(obtained);
+          if (nextExpiry == null || expiry.isBefore(nextExpiry!)) {
+            nextExpiry = expiry;
+          }
           continue;
         }
         await customStatement(
@@ -132,14 +220,25 @@ class AppDatabase extends GeneratedDatabase {
           [row.read<String>('entity_key'), 'tmdb'],
         );
       }
+      checkedChanges = (await customSelect(
+        'SELECT total_changes() AS n',
+      ).getSingle()).read<int>('n');
     });
     nextTmdbExpiry = nextExpiry;
+    // A surrounding transaction may still roll back this scan's deletions.
+    _retentionChanges = nested ? null : checkedChanges;
+    _retentionDataVersion = dataVersion;
+    _retentionEnabled = enabled;
+    _retentionCheckedAt = now;
     return changed;
   }
 
-  AppDatabase(super.executor);
-  factory AppDatabase.file(File file) =>
-      AppDatabase(NativeDatabase.createInBackground(file));
+  final bool backgroundDecoding;
+  AppDatabase(super.executor, {this.backgroundDecoding = false});
+  factory AppDatabase.file(File file) => AppDatabase(
+    NativeDatabase.createInBackground(file),
+    backgroundDecoding: true,
+  );
   factory AppDatabase.memory() => AppDatabase(NativeDatabase.memory());
   @override
   int get schemaVersion => 3;
@@ -470,6 +569,49 @@ class AppDatabase extends GeneratedDatabase {
       return null;
     }
     return (data: stampTmdb(data, obtained), fetchedAt: obtained);
+  }
+
+  /// One read and worker decode instead of one database round-trip per show.
+  Future<Map<int, SeriesBundle>> cachedLibrarySeries({Set<int>? ids}) async {
+    if (ids != null && ids.isEmpty) return {};
+    final enabled = await tmdbContentAllowed();
+    final rows = await customSelect(
+      "SELECT cache.data,cache.fetched_at FROM cache JOIN library "
+      r"ON cache.key='series:' || json_extract(library.data,'$.id') "
+      "WHERE library.type='tv'"
+      '${ids == null ? '' : " AND cache.key IN (${List.filled(ids.length, '?').join(',')})"}',
+      variables: [
+        if (ids != null)
+          for (final id in ids) Variable('series:$id'),
+      ],
+    ).get();
+    final input = (
+      rows: [
+        for (final row in rows)
+          (
+            data: row.read<String>('data'),
+            fetchedAt: row.read<String>('fetched_at'),
+          ),
+      ],
+      enabled: enabled,
+      now: retentionClock(),
+    );
+    final bundles = backgroundDecoding
+        ? await _runWorker(_decodeLibrarySeries, input)
+        : _decodeLibrarySeries(input);
+    // Access or the clock can change while the worker is decoding.
+    final allowed = await tmdbContentAllowed();
+    final now = retentionClock().toUtc();
+    bundles.removeWhere((_, bundle) {
+      if (bundle.title.provider != 'tmdb') return false;
+      final obtained = DateTime.tryParse(
+        string(bundle.title.raw[tmdbObtainedKey]),
+      );
+      return !allowed ||
+          obtained == null ||
+          !now.isBefore(tmdbExpiry(obtained));
+    });
+    return bundles;
   }
 
   Future<void> cache(String key, Json data, DateTime now) async {

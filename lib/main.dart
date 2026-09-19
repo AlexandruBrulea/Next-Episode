@@ -49,8 +49,10 @@ Future<void> main() async {
     );
   } catch (_) {
     runApp(
-      const MaterialApp(
-        home: Scaffold(
+      MaterialApp(
+        theme: nextEpisodeTheme(),
+        home: const Scaffold(
+          backgroundColor: Color(0xFF040C28),
           body: Center(
             child: Text(
               'The local database could not be opened. Restart the app and check available storage.',

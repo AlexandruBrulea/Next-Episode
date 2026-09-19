@@ -5,12 +5,14 @@ import 'package:next_episode/application/providers.dart';
 import 'package:next_episode/data/database.dart';
 import 'package:next_episode/main.dart';
 import 'package:next_episode/ui/details.dart';
+import 'package:next_episode/ui/feeds.dart';
+import 'package:next_episode/ui/calendar.dart';
 
 import 'fixtures.dart';
 
 void main() {
   testWidgets(
-    'startup and resume refresh even recently cached series automatically',
+    'startup and resume reuse fresh cache and leave unopened tabs unbuilt',
     (tester) async {
       final db = AppDatabase.memory();
       final api = FakeApi();
@@ -29,15 +31,29 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(api.calls, greaterThan(0));
-      expect((await db.cached('series:10'))!.data['seasons'][0]['episodes'], hasLength(4));
+      expect(api.calls, 0);
+      expect(find.byType(EpisodeFeed, skipOffstage: false), findsNothing);
+      expect(find.byType(CalendarScreen, skipOffstage: false), findsNothing);
+      expect(
+        (await db.cached('series:10'))!.data['seasons'][0]['episodes'],
+        hasLength(1),
+      );
       expect((await db.watched())['episode:10:1'], now);
       expect(find.byTooltip('Refresh library'), findsNothing);
       final calls = api.calls;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(api.calls, greaterThan(calls));
+      expect(api.calls, calls);
+      await Scrollable.ensureVisible(
+        tester.element(find.text('Serial test')),
+        alignment: 0.5,
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Serial test'));
       await tester.pumpAndSettle();
       expect(find.text('Refresh'), findsNothing);
@@ -66,7 +82,7 @@ void main() {
     );
     await tester.tap(find.text('Search'));
     await tester.pumpAndSettle();
-    expect(find.text('Search shows and movies · TMDB'), findsOneWidget);
+    expect(find.text('Search shows and movies'), findsOneWidget);
     expect(find.textContaining('TVmaze'), findsNothing);
     await tester.enterText(find.byType(TextField).last, 'Test');
     await tester.testTextInput.receiveAction(TextInputAction.search);
@@ -76,17 +92,43 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Library'));
     await tester.pumpAndSettle();
+    await Scrollable.ensureVisible(
+      tester.element(find.text('Serial test')),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Serial test'));
     await tester.pumpAndSettle();
     expect(find.byType(SeriesScreen), findsOneWidget);
     expect(find.textContaining('TMDB'), findsNothing);
     expect(find.textContaining('TVmaze'), findsNothing);
-    final seriesScroll = find.descendant(of: find.byType(SeriesScreen), matching: find.byType(Scrollable)).first;
-    await tester.scrollUntilVisible(find.byTooltip('Mark as watched').first, 350, scrollable: seriesScroll);
+    final seriesScroll = find
+        .descendant(
+          of: find.byType(SeriesScreen),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('Episode 1'),
+      350,
+      scrollable: seriesScroll,
+    );
+    await Scrollable.ensureVisible(
+      tester.element(find.byTooltip('Mark as watched').first),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Mark as watched').first);
     await tester.pumpAndSettle();
     expect((await db.watched()).containsKey('episode:10:1'), isTrue);
-    await tester.tap(find.descendant(of: find.byType(SeriesScreen), matching: find.byType(ListTile)).first);
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(SeriesScreen),
+            matching: find.byType(ListTile),
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.byType(EpisodeScreen), findsOneWidget);
     await tester.tap(find.byTooltip('Close').last);
@@ -105,6 +147,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(await db.library(), isEmpty);
     expect((await db.watched()).containsKey('episode:10:1'), isTrue);
+    await Scrollable.ensureVisible(
+      tester.element(find.text('Add to library')),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Add to library'));
     await tester.pumpAndSettle();
     expect(await db.library(), hasLength(1));

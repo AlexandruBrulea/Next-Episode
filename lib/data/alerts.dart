@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -61,6 +62,18 @@ DateTime? episodeAlertTime(EpisodeData episode, AlertSettings settings) {
 }
 
 class EpisodeAlerts {
+  static const settingsChannel = MethodChannel(
+    'next_episode/notification_settings',
+  );
+  bool get supportsSystemSettings =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  Future<void> openSystemSettings() async {
+    if (!supportsSystemSettings) return;
+    if (await settingsChannel.invokeMethod<bool>('open') != true) {
+      throw StateError('Notification settings could not be opened');
+    }
+  }
+
   final plugin = FlutterLocalNotificationsPlugin();
   Future<void>? _initializing;
   Future<void> _queue = Future.value();
@@ -98,7 +111,7 @@ class EpisodeAlerts {
             .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin
             >()
-            ?.requestPermissions(alert: true, sound: true, badge: false) ??
+            ?.requestPermissions(alert: true, sound: true, badge: true) ??
         false;
   }
 
@@ -167,6 +180,8 @@ class EpisodeAlerts {
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentSound: true,
+            presentBadge: true,
+            badgeNumber: 1,
           ),
         ),
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

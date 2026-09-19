@@ -10,6 +10,7 @@ import 'details.dart';
 import 'feeds.dart';
 import 'app_theme.dart';
 import 'library_filter.dart';
+import 'library_grid.dart';
 import 'settings.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -21,6 +22,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
   int tab = 0;
+  final visitedTabs = <int>{0};
   Timer? timer;
   Timer? retentionTimer;
   void scheduleRetention() {
@@ -55,7 +57,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    Future.microtask(sync);
+    WidgetsBinding.instance.addPostFrameCallback((_) => sync());
     timer = Timer.periodic(const Duration(minutes: 30), (_) => sync());
   }
 
@@ -69,7 +71,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     setState(() => syncing = true);
     try {
       await ref.read(libraryProvider.future);
-      final report = await ref.read(libraryProvider.notifier).sync();
+      final report = await ref
+          .read(libraryProvider.notifier)
+          .sync(onlyStale: true);
       if (mounted) {
         setState(
           () => syncMessage = report.errors.isNotEmpty ? report.message : null,
@@ -149,9 +153,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             index: tab,
             children: [
               const LibraryScreen(),
-              SearchScreen(active: tab == 1),
-              const EpisodeFeed(calendar: false),
-              const EpisodeFeed(calendar: true),
+              if (visitedTabs.contains(1))
+                SearchScreen(active: tab == 1)
+              else
+                const SizedBox.shrink(),
+              if (visitedTabs.contains(2))
+                const EpisodeFeed(calendar: false)
+              else
+                const SizedBox.shrink(),
+              if (visitedTabs.contains(3))
+                const EpisodeFeed(calendar: true)
+              else
+                const SizedBox.shrink(),
             ],
           ),
         ),
@@ -159,7 +172,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: tab,
-      onDestinationSelected: (value) => setState(() => tab = value),
+      onDestinationSelected: (value) => setState(() {
+        tab = value;
+        visitedTabs.add(value);
+      }),
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.video_library_outlined),
@@ -356,16 +372,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       ),
                     );
                   }
-                  return ListView.builder(
-                    itemCount: entries.length,
-                    itemBuilder: (context, i) {
-                      final entry = entries[i];
-                      return MediaTile(
-                        title: entry.title,
-                        progress: fraction(entry),
-                        subtitle:
-                            '${state(entry)} • ${(fraction(entry) * 100).round()}%\n${entry.title.statusLabel}',
-                        onTap: () => openTitle(context, entry.title),
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final cardWidth = (constraints.maxWidth - 48) / 3;
+                      final scale =
+                          MediaQuery.textScalerOf(context).scale(14) / 14;
+                      return CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 18),
+                              child: LibraryWatchTime(snapshot.watchTime),
+                            ),
+                          ),
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3,
+                                    crossAxisSpacing: 12,
+                                    mainAxisSpacing: 14,
+                                    mainAxisExtent:
+                                        cardWidth * 1.5 + 30 + 104 * scale,
+                                  ),
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                i,
+                              ) {
+                                final entry = entries[i];
+                                return LibraryPosterCard(
+                                  title: entry.title,
+                                  progress: fraction(entry),
+                                  onTap: () => openTitle(context, entry.title),
+                                );
+                              }, childCount: entries.length),
+                            ),
+                          ),
+                        ],
                       );
                     },
                   );
@@ -426,7 +470,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ref.read(searchProvider.notifier).queryChanged(value),
             decoration: InputDecoration(
               labelText: 'Search shows and movies', //searchLabel,
-              helperText: 'Type at least 3 characters to search',
+              helperText: 'Find your next favorite show or movie',
               border: const OutlineInputBorder(),
               suffixIcon: IconButton(
                 onPressed: search,

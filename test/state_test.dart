@@ -25,29 +25,59 @@ class PopularApi extends DelayedApi {
 }
 
 void main() {
-  testWidgets('typing requires three characters and debounces; clearing restores popular titles', (tester) async {
+  testWidgets(
+    'ten typed characters trigger one search after three idle seconds; clearing invalidates results',
+    (tester) async {
+      final api = PopularApi();
+      final container = ProviderContainer(
+        overrides: [apiProvider.overrideWithValue(api)],
+      );
+      final controller = container.read(searchProvider.notifier);
+      await controller.search('', null);
+      expect(container.read(searchProvider).results, hasLength(2));
+      const query = 'abcdefghij';
+      for (var length = 1; length < query.length; length++) {
+        controller.queryChanged(query.substring(0, length));
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      controller.queryChanged(query);
+      await tester.pump(const Duration(milliseconds: 2999));
+      expect(api.requests, isEmpty);
+      expect(api.popularCalls, 1);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(api.requests.keys, ['$query:1']);
+      // Clearing also invalidates a request already in flight.
+      controller.queryChanged('');
+      await tester.pump();
+      api.requests['$query:1']!.complete(const SearchPage([], 1, 1));
+      await tester.pump();
+      expect(container.read(searchProvider).query, '');
+      expect(container.read(searchProvider).results, hasLength(2));
+      container.dispose();
+    },
+  );
+  testWidgets('short titles work and submitting cancels the pending timer', (
+    tester,
+  ) async {
     final api = PopularApi();
-    final container = ProviderContainer(overrides: [apiProvider.overrideWithValue(api)]);
+    final container = ProviderContainer(
+      overrides: [apiProvider.overrideWithValue(api)],
+    );
     final controller = container.read(searchProvider.notifier);
-    await controller.search('', null);
-    expect(container.read(searchProvider).results, hasLength(2));
-    controller.queryChanged('ab');
+    controller.queryChanged('It');
+    await tester.pump(const Duration(seconds: 3));
+    expect(api.requests.keys, ['It:1']);
+    api.requests['It:1']!.complete(const SearchPage([], 1, 1));
     await tester.pump();
-    expect(api.requests, isEmpty);
-    controller.queryChanged('abc');
-    await tester.pump(const Duration(milliseconds: 200));
-    controller.queryChanged('abcd');
-    await tester.pump(const Duration(milliseconds: 349));
-    expect(api.requests, isEmpty);
-    await tester.pump(const Duration(milliseconds: 1));
-    expect(api.requests.keys, ['abcd:1']);
-    // Clearing also invalidates a request already in flight.
-    controller.queryChanged('');
-    await tester.pump();
-    api.requests['abcd:1']!.complete(const SearchPage([], 1, 1));
-    await tester.pump();
-    expect(container.read(searchProvider).query, '');
-    expect(container.read(searchProvider).results, hasLength(2));
+    controller.queryChanged('Reacher');
+    final submitted = controller.search('Reacher', null);
+    final request = api.requests['Reacher:1'];
+    expect(request, isNotNull);
+    request!.complete(const SearchPage([], 1, 1));
+    await submitted;
+    await tester.pump(const Duration(seconds: 4));
+    expect(identical(api.requests['Reacher:1'], request), true);
+    expect(api.popularCalls, 0);
     container.dispose();
   });
   test('a late response cannot replace a newer search', () async {

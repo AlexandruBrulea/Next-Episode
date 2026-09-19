@@ -127,9 +127,10 @@ class ProgressRepository {
 }
 
 class SyncReport {
+  final Set<String> refreshedKeys;
   final List<SyncChanges> changes;
   final List<String> errors;
-  const SyncReport(this.changes, this.errors);
+  const SyncReport(this.changes, this.errors, {this.refreshedKeys = const {}});
   String get message => errors.isEmpty
       ? 'Your library is up to date.'
       : 'Your data is safe. Some information could not be updated right now.';
@@ -174,13 +175,26 @@ class SyncRepository {
     _running = true;
     final changes = <SyncChanges>[];
     final errors = <String>[];
+    final refreshedKeys = <String>{};
     try {
-      for (final entry in await db.library()) {
+      final entries = await db.library(); // Also removes expired cache rows.
+      final cachedKeys = {
+        for (final row in await db.customSelect('SELECT key FROM cache').get())
+          row.read<String>('key'),
+      };
+      for (final entry in entries) {
         if (onlyStale &&
             entry.title.provider == series.api.id &&
             entry.updatedAt != null &&
             DateTime.now().difference(entry.updatedAt!) <
-                const Duration(hours: 6)) {
+                (['Ended', 'Canceled'].contains(entry.title.status)
+                    ? const Duration(days: 7)
+                    : const Duration(hours: 6)) &&
+            cachedKeys.contains(
+              entry.title.isTv
+                  ? 'series:${entry.title.id}'
+                  : 'movie:${entry.title.id}',
+            )) {
           continue;
         }
         try {
@@ -199,12 +213,13 @@ class SyncRepository {
               throw const ApiFailure('Movie information could not be updated.');
             }
           }
+          refreshedKeys.add(entry.title.key);
         } catch (e) {
           await db.administrativeConflict(entry.title.key, '$e');
           errors.add('${entry.title.title}: $e');
         }
       }
-      return SyncReport(changes, errors);
+      return SyncReport(changes, errors, refreshedKeys: refreshedKeys);
     } finally {
       _running = false;
     }
