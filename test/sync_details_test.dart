@@ -5,7 +5,7 @@ import 'package:next_episode/application/providers.dart';
 import 'package:next_episode/data/database.dart';
 import 'package:next_episode/data/repositories.dart';
 import 'package:next_episode/domain/models.dart';
-import 'package:next_episode/main.dart';
+import 'package:next_episode/ui/home.dart';
 
 import 'fixtures.dart';
 
@@ -33,7 +33,7 @@ void main() {
             databaseProvider.overrideWithValue(db),
             apiProvider.overrideWithValue(api),
           ],
-          child: const NextEpisodeApp(),
+          child: const MaterialApp(home: HomeScreen(showSyncDiagnostics: true)),
         ),
       );
       await tester.pumpAndSettle();

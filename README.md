@@ -25,6 +25,7 @@ CONTENT_PROVIDER=tvmaze
 CONTENT_GENERATION=1
 CONTENT_CONFIG_URL=
 TMDB_TOKEN=
+SYNC_DIAGNOSTICS_ENABLED=false
 ```
 
 Pentru trecerea la TMDB: setează `CONTENT_PROVIDER=tmdb`, completează `TMDB_TOKEN` cu Read Access Token/Bearer și crește `CONTENT_GENERATION` (de exemplu la 2). Distribuie noul build. `CATALOG_PROVIDER` este acceptat doar ca alias de compatibilitate atunci când `CONTENT_PROVIDER` lipsește. Fișierul `.env` existent nu este rescris automat.

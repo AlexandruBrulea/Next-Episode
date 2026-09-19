@@ -34,8 +34,14 @@ Required values for this release:
 - `SUPPORT_EMAIL`: the public contact from the local configuration.
 - `DEMO=false`
 - `CONTENT_CONFIG_URL`: only set if a production configuration endpoint has been deployed and verified.
+- `SYNC_DIAGNOSTICS_ENABLED=true`: temporarily shows the safe per-title update
+  details button in TestFlight. Set it to `false` for the public release.
 
 Use `lib/main.dart`. Do not commit the configuration file containing the token, echo its contents in logs or add it to build artifacts. A token bundled in a mobile app remains extractable; CI secret storage does not make the installed token confidential.
+
+`SYNC_DIAGNOSTICS_ENABLED` is a Dart compile-time value. Changing it in
+Codemagic changes the next build only; an installed TestFlight build keeps the
+value it was built with.
 
 ## Release verification still required
 

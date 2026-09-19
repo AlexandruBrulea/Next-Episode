@@ -15,7 +15,13 @@ import 'library_grid.dart';
 import 'settings.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final bool showSyncDiagnostics;
+  const HomeScreen({
+    super.key,
+    this.showSyncDiagnostics = const bool.fromEnvironment(
+      'SYNC_DIAGNOSTICS_ENABLED',
+    ),
+  });
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
@@ -182,7 +188,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           MaterialBanner(
             content: Text(syncMessage!),
             actions: [
-              if (syncIssues.isNotEmpty)
+              if (widget.showSyncDiagnostics && syncIssues.isNotEmpty)
                 TextButton(
                   onPressed: showSyncDetails,
                   child: const Text('Details'),
@@ -497,12 +503,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         }
       });
     }
-    // Temporary diagnostic requested for testing administrative transitions.
-    final searchLabel = catalog.id == 'tvmaze'
-        ? 'Search shows · TVmaze'
-        : catalog.id == 'tmdb'
-        ? 'Search shows and movies · TMDB'
-        : 'Search shows and movies · ${catalog.label}';
     return Column(
       children: [
         Padding(
