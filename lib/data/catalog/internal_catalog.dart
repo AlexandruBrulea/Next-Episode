@@ -24,7 +24,11 @@ class InternalCatalog {
     return result == null ? null : SeriesBundle.fromJson(result.data);
   }
 
-  void verify(SeriesBundle? old, SeriesBundle incoming) {
+  void verify(
+    SeriesBundle? old,
+    SeriesBundle incoming, {
+    bool allowRemovals = false,
+  }) {
     final episodes = incoming.episodes;
     if (episodes.map((e) => e.id).toSet().length != episodes.length) {
       throw const CatalogConflict(
@@ -56,6 +60,12 @@ class InternalCatalog {
       );
     }
     if (old == null) return;
+    // A normal refresh can retire absent slots while keeping their identities
+    // and watch history. Provider migrations must still prove a full mapping.
+    final canRetire =
+        allowRemovals &&
+        old.title.provider == incoming.title.provider &&
+        episodes.isNotEmpty;
     for (final previous in old.episodes) {
       if (previous.isSpecial) {
         final matches = episodes.where(
@@ -71,7 +81,8 @@ class InternalCatalog {
             'Special episodes require an administrative mapping',
           );
         }
-      } else if (!keys.contains('${previous.season}:${previous.number}')) {
+      } else if (!canRetire &&
+          !keys.contains('${previous.season}:${previous.number}')) {
         throw CatalogConflict(
           'missing_episode',
           'Missing or renumbered S${previous.season}E${previous.number}',
@@ -79,7 +90,8 @@ class InternalCatalog {
       }
     }
     for (final season in old.seasons) {
-      if (!incoming.seasons.any((s) => s.number == season.number)) {
+      if (!canRetire &&
+          !incoming.seasons.any((s) => s.number == season.number)) {
         throw CatalogConflict(
           'season_numbering',
           'Season ${season.number} is absent or renumbered',
@@ -132,9 +144,10 @@ class InternalCatalog {
     int showId,
     SeriesBundle remote, {
     double confidence = 1,
+    bool allowRemovals = false,
   }) async {
     final old = await cached(showId);
-    verify(old, remote);
+    verify(old, remote, allowRemovals: allowRemovals);
     final seasonRows = await db
         .customSelect(
           'SELECT * FROM internal_seasons WHERE series_id=?',

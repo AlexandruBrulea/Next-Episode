@@ -65,7 +65,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             shrinkWrap: true,
             children: [
               Text(
-                '${syncIssues.length} titles could not be updated. Your watched progress has been kept.',
+                '${syncIssues.length} ${syncIssues.length == 1 ? 'title' : 'titles'} could not be updated. Your watched progress has been kept.',
               ),
               for (final issue in syncIssues)
                 ListTile(

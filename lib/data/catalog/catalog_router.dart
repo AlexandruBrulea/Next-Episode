@@ -267,7 +267,7 @@ class CatalogRouter extends CatalogProvider {
           );
         }
         final store = InternalCatalog(db);
-        final result = await store.bind(id, remote);
+        final result = await store.bind(id, remote, allowRemovals: true);
         await store.persist(result);
         return result;
       });
