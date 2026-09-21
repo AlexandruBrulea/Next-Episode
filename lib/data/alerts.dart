@@ -162,13 +162,14 @@ class EpisodeAlerts {
       }
       allowed.add(bundle);
     }
-    int countAt(DateTime time) => unwatchedEpisodeCount(
-      allowed.where(
-        (b) => expiries[b.title.key]?.isAfter(time.toUtc()) ?? true,
-      ),
+    // Count each episode once; scheduling up to 60 notifications must not scan
+    // the entire library 60 times on the UI isolate.
+    final badgeTimeline = EpisodeBadgeTimeline(
+      allowed,
       watched,
-      time,
+      expiries: expiries,
     );
+    int countAt(DateTime time) => badgeTimeline.countAt(time);
     var badgeSchedules = 0;
     if (supportsSystemSettings) {
       await settingsChannel.invokeMethod<bool>(
@@ -177,15 +178,9 @@ class EpisodeAlerts {
       );
       if (settings.badgeEnabled) {
         // Badge-only notifications also work without audible episode reminders.
-        final changes = <DateTime>{
-          ...expiries.values,
-          for (final bundle in allowed)
-            for (final episode in bundle.episodes)
-              if (!episode.isSpecial &&
-                  !watched.containsKey(episode.key) &&
-                  episode.airDate != null)
-                day(episode.airDate!).toUtc(),
-        }.where((time) => time.isAfter(now.toUtc())).toList()..sort();
+        final changes = badgeTimeline.times.where(
+          (time) => time.isAfter(now.toUtc()),
+        );
         for (final time in changes.take(30)) {
           await plugin.zonedSchedule(
             id: 1000 + badgeSchedules++,
@@ -248,6 +243,62 @@ class EpisodeAlerts {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       );
     }
+  }
+}
+
+/// Prefix counts at release days and metadata expirations. Dates match To watch.
+class EpisodeBadgeTimeline {
+  final List<DateTime> times;
+  final List<int> counts;
+  EpisodeBadgeTimeline._(this.times, this.counts);
+
+  factory EpisodeBadgeTimeline(
+    Iterable<SeriesBundle> series,
+    Map<String, DateTime> watched, {
+    Map<String, DateTime> expiries = const {},
+  }) {
+    final deltas = <DateTime, int>{};
+    final keys = <String>{};
+    for (final bundle in series) {
+      if (!bundle.title.isTv || bundle.title.raw['content_unavailable'] == true) {
+        continue;
+      }
+      final expiry = expiries[bundle.title.key]?.toUtc();
+      for (final episode in bundle.episodes) {
+        final air = episode.airDate;
+        if (episode.isSpecial ||
+            air == null ||
+            watched.containsKey(episode.key) ||
+            !keys.add(episode.key)) {
+          continue;
+        }
+        final start = day(air).toUtc();
+        if (expiry != null && !start.isBefore(expiry)) continue;
+        deltas.update(start, (n) => n + 1, ifAbsent: () => 1);
+        if (expiry != null) {
+          deltas.update(expiry, (n) => n - 1, ifAbsent: () => -1);
+        }
+      }
+    }
+    final times = deltas.keys.where((time) => deltas[time] != 0).toList()
+      ..sort();
+    var total = 0;
+    return EpisodeBadgeTimeline._(times, [
+      for (final time in times) total += deltas[time]!,
+    ]);
+  }
+
+  int countAt(DateTime time) {
+    var low = 0, high = times.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (times[middle].isAfter(time)) {
+        high = middle;
+      } else {
+        low = middle + 1;
+      }
+    }
+    return low == 0 ? 0 : counts[low - 1];
   }
 }
 

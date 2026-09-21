@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
@@ -14,135 +15,144 @@ class EpisodeFeed extends ConsumerStatefulWidget {
   ConsumerState<EpisodeFeed> createState() => _EpisodeFeedState();
 }
 
+// Lightweight row descriptions; widgets and images are built near the viewport.
+typedef _FeedRow = ({
+  String key,
+  TitleData title,
+  EpisodeData? episode,
+  int? count,
+});
+
 class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
   final Map<String, int> _visibleCounts = {};
-  bool get calendar => widget.calendar;
 
   @override
-  Widget build(BuildContext context) => calendar ? const CalendarScreen() : ref
-      .watch(libraryProvider)
-      .when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, s) => FailureView(e, () => ref.invalidate(libraryProvider)),
-        data: (snapshot) {
-          final now = day(DateTime.now());
-          final items = <({TitleData title, EpisodeData episode})>[];
-          for (final bundle in snapshot.series.values) {
-            for (final episode in bundle.episodes) {
-              if (episode.isSpecial) continue;
-              final include = calendar
-                  ? episode.airDate == null ||
-                        !day(episode.airDate!).isBefore(now)
-                  : episode.released(now) &&
-                        !snapshot.watched.containsKey(episode.key);
-              if (include) items.add((title: bundle.title, episode: episode));
-            }
-          }
-          items.sort((a, b) {
-            if (calendar) {
-              final byDate = (a.episode.airDate ?? DateTime(9999)).compareTo(
-                b.episode.airDate ?? DateTime(9999),
-              );
-              if (byDate != 0) return byDate;
-            }
-            final byTitle = a.title.title.compareTo(b.title.title);
-            return byTitle != 0 ? byTitle : episodeOrder(a.episode, b.episode);
-          });
-          final groups =
-              <String, List<({TitleData title, EpisodeData episode})>>{};
-          for (final item in items) {
-            final d = item.episode.airDate;
-            final key = !calendar
-                ? item.title.key
-                : d == null
-                ? 'Date TBA'
-                : day(d) == now
-                ? 'Today'
-                : day(d) == now.add(const Duration(days: 1))
-                ? 'Tomorrow'
-                : dateLabel(d);
-            groups.putIfAbsent(key, () => []).add(item);
-          }
-          if (items.isEmpty) {
-            return Center(
-              child: Text(
-                calendar
-                    ? 'No upcoming episodes are known for your library.'
-                    : 'No released, unwatched episodes.',
-                textAlign: TextAlign.center,
-              ),
-            );
-          }
-          return ListView(
-            children: [
-              if (calendar)
-                const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'Original air dates; availability may vary by region. Air times are not provided. Specials are listed under season 0.',
-                  ),
-                ),
-              for (final group in groups.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    calendar
-                        ? group.key
-                        : '${group.value.first.title.title} • ${group.value.length} unwatched',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                for (final item in group.value.take(
-                  calendar
-                      ? group.value.length
-                      : (_visibleCounts[group.key] ?? 5),
-                ))
-                  Card(child: ListTile(
-                    leading: Poster(item.title.poster),
-                    title: Text(
-                      '${calendar ? '${item.title.title}\n' : ''}${item.episode.code} • ${item.episode.title}',
-                    ),
-                    subtitle: Text(
-                      '${dateLabel(item.episode.airDate)}${item.title.networks.isEmpty ? '' : '\n${item.title.networks.join(', ')}'}',
-                    ),
-                    onTap: () => openScreen(
-                      context,
-                      EpisodeScreen(title: item.title, episode: item.episode),
-                    ),
-                    trailing: !calendar
-                        ? IconButton(
-                            tooltip: 'Mark as watched',
-                            icon: const Icon(Icons.check_box_outline_blank),
-                            onPressed: () => perform(
-                              context,
-                              () => markEpisodeWithConfirmation(
-                                context,
-                                ref,
-                                item.episode,
-                                true,
-                              ),
-                            ),
+  Widget build(BuildContext context) => widget.calendar
+      ? const CalendarScreen()
+      : ref
+            .watch(libraryProvider)
+            .when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, s) =>
+                  FailureView(e, () => ref.invalidate(libraryProvider)),
+              data: (snapshot) {
+                final now = day(DateTime.now());
+                final bundles = snapshot.series.values.toList()
+                  ..sort((a, b) => a.title.title.compareTo(b.title.title));
+                final rows = <_FeedRow>[];
+                for (final bundle in bundles) {
+                  final episodes =
+                      bundle.episodes
+                          .where(
+                            (episode) =>
+                                !episode.isSpecial &&
+                                episode.released(now) &&
+                                !snapshot.watched.containsKey(episode.key),
                           )
-                        : null,
-                  )),
-                if (!calendar &&
-                    group.value.length > (_visibleCounts[group.key] ?? 5))
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: () => setState(() {
-                          _visibleCounts[group.key] =
-                              (_visibleCounts[group.key] ?? 5) + 3;
-                        }),
-                        child: const Text('Show more'),
-                      ),
+                          .toList()
+                        ..sort(episodeOrder);
+                  if (episodes.isEmpty) continue;
+                  final title = bundle.title;
+                  final count = _visibleCounts[title.key] ?? 5;
+                  rows.add((
+                    key: 'header:${title.key}',
+                    title: title,
+                    episode: null,
+                    count: episodes.length,
+                  ));
+                  for (final episode in episodes.take(count)) {
+                    rows.add((
+                      key: episode.key,
+                      title: title,
+                      episode: episode,
+                      count: null,
+                    ));
+                  }
+                  if (episodes.length > count) {
+                    rows.add((
+                      key: 'more:${title.key}',
+                      title: title,
+                      episode: null,
+                      count: null,
+                    ));
+                  }
+                }
+                if (rows.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No released, unwatched episodes.',
+                      textAlign: TextAlign.center,
                     ),
-                  ),
-              ],
-            ],
-          );
-        },
-      );
+                  );
+                }
+                final indices = {
+                  for (var i = 0; i < rows.length; i++) rows[i].key: i,
+                };
+                return ListView.builder(
+                  // Prepare roughly one extra screen on either side of the viewport.
+                  scrollCacheExtent: const ScrollCacheExtent.viewport(1),
+                  itemCount: rows.length,
+                  findChildIndexCallback: (key) =>
+                      key is ValueKey<String> ? indices[key.value] : null,
+                  itemBuilder: (context, index) {
+                    final row = rows[index];
+                    final key = ValueKey(row.key);
+                    final episode = row.episode;
+                    if (row.count != null) {
+                      return Padding(
+                        key: key,
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          '${row.title.title} • ${row.count} unwatched',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      );
+                    }
+                    if (episode == null) {
+                      return Padding(
+                        key: key,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => setState(() {
+                              _visibleCounts[row.title.key] =
+                                  (_visibleCounts[row.title.key] ?? 5) + 3;
+                            }),
+                            child: const Text('Show more'),
+                          ),
+                        ),
+                      );
+                    }
+                    return Card(
+                      key: key,
+                      child: ListTile(
+                        leading: Poster(row.title.poster),
+                        title: Text('${episode.code} • ${episode.title}'),
+                        subtitle: Text(
+                          '${dateLabel(episode.airDate)}${row.title.networks.isEmpty ? '' : '\n${row.title.networks.join(', ')}'}',
+                        ),
+                        onTap: () => openScreen(
+                          context,
+                          EpisodeScreen(title: row.title, episode: episode),
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Mark as watched',
+                          icon: const Icon(Icons.check_box_outline_blank),
+                          onPressed: () => perform(
+                            context,
+                            () => markEpisodeWithConfirmation(
+                              context,
+                              ref,
+                              episode,
+                              true,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            );
 }

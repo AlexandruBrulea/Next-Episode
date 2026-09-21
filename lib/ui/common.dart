@@ -17,10 +17,13 @@ Future<void> markEpisodeWithConfirmation(
     await controller.markEpisode(episode, seen);
     return;
   }
-  final bundle = await ref
-      .read(seriesRepositoryProvider)
-      .cached(episode.seriesId);
-  final watched = await ref.read(progressRepositoryProvider).all();
+  final snapshot = ref.read(libraryProvider).asData?.value;
+  final bundle =
+      snapshot?.series[episode.seriesId] ??
+      await ref.read(seriesRepositoryProvider).cached(episode.seriesId);
+  final watched =
+      ref.read(libraryProvider).asData?.value.watched ??
+      await ref.read(progressRepositoryProvider).all();
   final now = DateTime.now();
   final previous =
       (bundle?.episodes ?? <EpisodeData>[])
@@ -118,7 +121,14 @@ void openScreen(BuildContext context, Widget screen) {
 class Poster extends StatelessWidget {
   final String path;
   final double width, height;
-  const Poster(this.path, {super.key, this.width = 48, this.height = 72});
+  final bool isPoster;
+  const Poster(
+    this.path, {
+    super.key,
+    this.width = 48,
+    this.height = 72,
+    this.isPoster = true,
+  });
   @override
   Widget build(BuildContext context) {
     final placeholder = SizedBox(
@@ -139,15 +149,60 @@ class Poster extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: path.isEmpty
           ? placeholder
-          : Image.network(
-              path,
-              width: width,
-              height: height,
-              fit: BoxFit.cover,
-              errorBuilder: (_, error, stack) => placeholder,
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final size = constraints.constrain(Size(width, height));
+                final url = isPoster
+                    ? sizedPosterUrl(
+                        path,
+                        size,
+                        MediaQuery.devicePixelRatioOf(context),
+                      )
+                    : path;
+                final resized = url != path;
+                return Image.network(
+                  url,
+                  width: width,
+                  height: height,
+                  cacheWidth: resized
+                      ? int.parse(Uri.parse(url).pathSegments[2].substring(1))
+                      : null,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, error, stack) => placeholder,
+                );
+              },
             ),
     );
   }
+}
+
+// Keep large artwork at its existing resolution. For poster thumbnails choose
+// a CDN bucket covering the physical pixels needed by BoxFit.cover (2:3 art).
+String sizedPosterUrl(String path, Size size, double pixelRatio) {
+  if (!size.width.isFinite || !size.height.isFinite || size.isEmpty) {
+    return path;
+  }
+  final uri = Uri.tryParse(path);
+  if (uri == null ||
+      uri.scheme != 'https' ||
+      uri.host != 'image.tmdb.org' ||
+      !uri.path.startsWith('/t/p/w500/') ||
+      uri.path.endsWith('.svg')) {
+    return path;
+  }
+  final requiredWidth =
+      (size.width > size.height * 2 / 3 ? size.width : size.height * 2 / 3) *
+      pixelRatio;
+  final bucket = requiredWidth <= 185
+      ? 185
+      : requiredWidth <= 342
+      ? 342
+      : 500;
+  return bucket == 500
+      ? path
+      : uri
+            .replace(path: uri.path.replaceFirst('/w500/', '/w$bucket/'))
+            .toString();
 }
 
 class SourceCredit extends StatelessWidget {

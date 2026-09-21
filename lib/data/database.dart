@@ -535,17 +535,36 @@ class AppDatabase extends GeneratedDatabase {
       row.read<String>('key'): DateTime.parse(row.read<String>('marked_at')),
   };
   Future<void> mark(String key, bool seen, DateTime now) =>
-      transaction(() async {
-        if (seen) {
-          await customStatement(
-            'INSERT OR IGNORE INTO watched (key,marked_at) VALUES (?,?)',
-            [key, now.toIso8601String()],
-          );
-        } else {
-          await customStatement('DELETE FROM watched WHERE key = ?', [key]);
+      markMany([key], seen, now);
+
+  /// One atomic batch, including history, without per-episode database trips.
+  Future<void> markMany(Iterable<String> keys, bool seen, DateTime now) async {
+    final unique = keys.toSet();
+    if (unique.isEmpty) return;
+    final timestamp = now.toIso8601String();
+    await transaction(() async {
+      await batch((batch) {
+        for (final key in unique) {
+          if (schemaVersion >= 3) {
+            batch.customStatement(
+              'INSERT INTO user_history (entity_key,action,occurred_at) '
+              'SELECT ?,?,? WHERE ${seen ? 'NOT EXISTS' : 'EXISTS'} '
+              '(SELECT 1 FROM watched WHERE key=?)',
+              [key, seen ? 'watched' : 'unwatched', timestamp, key],
+            );
+          }
+          if (seen) {
+            batch.customStatement(
+              'INSERT OR IGNORE INTO watched (key,marked_at) VALUES (?,?)',
+              [key, timestamp],
+            );
+          } else {
+            batch.customStatement('DELETE FROM watched WHERE key=?', [key]);
+          }
         }
-        await _history(key, seen ? 'watched' : 'unwatched', now);
       });
+    });
+  }
 
   Future<({Json data, DateTime fetchedAt})?> cached(String key) async {
     final row = await customSelect(

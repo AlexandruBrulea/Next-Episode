@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart';
 import '../data/database.dart';
 import '../data/alerts.dart';
 import '../data/repositories.dart';
+import '../data/tmdb_retention.dart';
 import '../domain/catalog_provider.dart';
 
 import '../data/catalog/catalog_router.dart';
@@ -59,6 +60,21 @@ class LibrarySnapshot {
   final Map<String, DateTime> watched;
   final Map<int, SeriesBundle> series;
   LibrarySnapshot(this.entries, this.watched, this.series);
+  LibrarySnapshot withWatched(Map<String, DateTime> value) {
+    final result = LibrarySnapshot(entries, value, series);
+    final changedShows = <int>{};
+    for (final key in {...watched.keys, ...value.keys}) {
+      if (watched[key] == value[key] || !key.startsWith('episode:')) continue;
+      final id = int.tryParse(key.split(':')[1]);
+      if (id != null) changedShows.add(id);
+    }
+    result._progressDay = _progressDay;
+    result._progress.addEntries(
+      _progress.entries.where((e) => !changedShows.contains(e.key)),
+    );
+    return result;
+  }
+
   late final watchTime = WatchTimeSummary.calculate(entries, series, watched);
   final Map<int, WatchProgress> _progress = {};
   DateTime? _progressDay;
@@ -134,7 +150,27 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
   }
 
   Future<void> reload({Set<String>? changedKeys}) async {
-    final snapshot = await _read(changedKeys: changedKeys);
+    final revision = _progressRevision;
+    var snapshot = await _read(changedKeys: changedKeys);
+    // A metadata read can finish after the user has saved newer watch marks.
+    if (revision != _progressRevision && state.asData != null) {
+      snapshot = snapshot.withWatched(state.asData!.value.watched);
+    }
+    state = AsyncData(snapshot);
+    await _refreshAlerts(snapshot);
+  }
+
+  int _progressRevision = 0;
+  Future<void> _refreshProgress() async {
+    final revision = ++_progressRevision;
+    final watched = await ref.read(progressRepositoryProvider).all();
+    if (revision != _progressRevision) return;
+    final previous = state.asData?.value;
+    if (previous == null) {
+      await reload();
+      return;
+    }
+    final snapshot = previous.withWatched(watched);
     state = AsyncData(snapshot);
     await _refreshAlerts(snapshot);
   }
@@ -186,29 +222,22 @@ class LibraryController extends AsyncNotifier<LibrarySnapshot> {
 
   Future<void> markEpisode(EpisodeData e, bool seen) async {
     await ref.read(progressRepositoryProvider).episode(e, seen);
-    await reload();
+    await _refreshProgress();
   }
 
   Future<void> markEpisodesSeen(List<EpisodeData> episodes) async {
-    final now = DateTime.now();
-    await ref.read(databaseProvider).transaction(() async {
-      for (final episode in episodes) {
-        await ref
-            .read(progressRepositoryProvider)
-            .episode(episode, true, now: now);
-      }
-    });
-    await reload();
+    await ref.read(progressRepositoryProvider).episodes(episodes, true);
+    await _refreshProgress();
   }
 
   Future<void> markSeason(SeasonData s, bool seen) async {
     await ref.read(progressRepositoryProvider).season(s, seen);
-    await reload();
+    await _refreshProgress();
   }
 
   Future<void> markMovie(int id, bool seen) async {
     await ref.read(progressRepositoryProvider).movie(id, seen);
-    await reload();
+    await _refreshProgress();
   }
 
   Future<SyncReport> sync({bool onlyStale = false}) async {
@@ -270,6 +299,25 @@ final seriesDetailsProvider = FutureProvider.autoDispose
     .family<Loaded<SeriesBundle>, int>(
       (ref, id) => ref.watch(seriesRepositoryProvider).load(id),
     );
+// Saved shows already have complete, retention-checked bundles in the library.
+// Only unsaved, missing or expired content needs the asynchronous loader.
+final seriesContentProvider = Provider.autoDispose
+    .family<AsyncValue<Loaded<SeriesBundle>>, int>((ref, id) {
+      final bundle = ref.watch(
+        libraryProvider.select((value) => value.asData?.value.series[id]),
+      );
+      if (bundle != null && bundle.title.raw['content_unavailable'] != true) {
+        final obtained = DateTime.tryParse(
+          string(bundle.title.raw[tmdbObtainedKey]),
+        );
+        final expired =
+            bundle.title.provider == 'tmdb' &&
+            obtained != null &&
+            !DateTime.now().toUtc().isBefore(tmdbExpiry(obtained));
+        if (!expired) return AsyncData(Loaded(bundle));
+      }
+      return ref.watch(seriesDetailsProvider(id));
+    });
 final movieDetailsProvider = FutureProvider.autoDispose
     .family<Loaded<TitleData>, int>(
       (ref, id) => ref.watch(moviesRepositoryProvider).load(id),

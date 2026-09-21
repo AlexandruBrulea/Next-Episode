@@ -12,6 +12,31 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
+    'badge timeline matches release counts and stops counting expired metadata',
+    () {
+      final data = bundle();
+      final watched = {data.seasons.first.episodes.first.key: now};
+      final timeline = EpisodeBadgeTimeline([data, data], watched);
+      for (var n = -10; n <= 10; n++) {
+        final date = now.add(Duration(days: n));
+        expect(
+          timeline.countAt(date),
+          unwatchedEpisodeCount([data], watched, date),
+        );
+      }
+      final expires = now.add(const Duration(days: 1));
+      final limited = EpisodeBadgeTimeline(
+        [data],
+        watched,
+        expiries: {data.title.key: expires},
+      );
+      expect(limited.countAt(expires.subtract(const Duration(seconds: 1))), 2);
+      expect(limited.countAt(expires), 0);
+      expect(limited.countAt(expires.add(const Duration(days: 5))), 0);
+    },
+  );
+
+  test(
     'count matches released unwatched regular episodes, without duplicates',
     () {
       final data = bundle();

@@ -10,7 +10,7 @@ class CastCards extends StatelessWidget {
     final width = box.maxWidth < 420 ? box.maxWidth : (box.maxWidth - 16) / 2;
     return Wrap(spacing: 16, runSpacing: 18, children: [
       for (final person in cast.take(12)) SizedBox(width: width, child: Row(children: [
-        ClipOval(child: Poster(imageUrl(person['profile_path']), width: 54, height: 54)),
+        ClipOval(child: Poster(imageUrl(person['profile_path']), width: 54, height: 54, isPoster: false)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(string(person['name']), style: Theme.of(context).textTheme.titleSmall),
@@ -66,7 +66,7 @@ class TitleInformation extends StatelessWidget {
       if (availableServices.isEmpty) const Text('No viewing options available yet.'),
           Wrap(spacing: 16, runSpacing: 12, children: [for (final provider in availableServices)
             SizedBox(width: 100, child: Column(children: [
-              Poster(imageUrl(provider['logo_path']), width: 48, height: 48),
+              Poster(imageUrl(provider['logo_path']), width: 48, height: 48, isPoster: false),
               const SizedBox(height: 6), Text(string(provider['provider_name']), textAlign: TextAlign.center),
             ])),
           ]),

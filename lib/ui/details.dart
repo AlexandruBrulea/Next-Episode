@@ -71,6 +71,7 @@ class TitleHeader extends StatelessWidget {
               children: [
                 Poster(
                   title.backdrop.isNotEmpty ? title.backdrop : title.poster,
+                  isPoster: title.backdrop.isEmpty,
                   width: double.infinity,
                   height: 320,
                 ),
@@ -183,7 +184,7 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
       ),
     ),
     body: ref
-        .watch(seriesDetailsProvider(widget.id))
+        .watch(seriesContentProvider(widget.id))
         .when(
           skipLoadingOnRefresh: false,
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -193,7 +194,7 @@ class _SeriesScreenState extends ConsumerState<SeriesScreen> {
           ),
           data: (loaded) {
             final snapshot = ref.watch(libraryProvider).asData?.value;
-            final bundle = snapshot?.series[widget.id] ?? loaded.value;
+            final bundle = loaded.value;
             final title = bundle.title;
             final watched = snapshot?.watched ?? <String, DateTime>{};
             final saved = snapshot?.contains(title.key) ?? false;
@@ -457,7 +458,7 @@ class SeasonScreen extends ConsumerWidget {
       title: Text(seasonNumber == 0 ? 'Specials' : 'Season $seasonNumber'),
     ),
     body: ref
-        .watch(seriesDetailsProvider(seriesId))
+        .watch(seriesContentProvider(seriesId))
         .when(
           skipLoadingOnRefresh: false,
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -467,7 +468,7 @@ class SeasonScreen extends ConsumerWidget {
           ),
           data: (loaded) {
             final snapshot = ref.watch(libraryProvider).asData?.value;
-            final bundle = snapshot?.series[seriesId] ?? loaded.value;
+            final bundle = loaded.value;
             final season = bundle.seasons
                 .where((s) => s.number == seasonNumber)
                 .firstOrNull;
@@ -653,7 +654,12 @@ class EpisodeScreen extends ConsumerWidget {
           InfoLine('Network', title.networks.join(', ')),
           const SizedBox(height: 24),
           if (current.still.isNotEmpty)
-            Poster(current.still, width: double.infinity, height: 240),
+            Poster(
+              current.still,
+              width: double.infinity,
+              height: 240,
+              isPoster: false,
+            ),
           const SizedBox(height: 24),
           if (guestStars.isNotEmpty) ...[
             Text('Guest stars', style: Theme.of(context).textTheme.titleLarge),

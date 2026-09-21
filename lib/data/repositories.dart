@@ -105,26 +105,33 @@ class ProgressRepository {
   ProgressRepository(this.db);
   Future<Map<String, DateTime>> all() => db.watched();
   Future<void> episode(EpisodeData episode, bool seen, {DateTime? now}) async {
+    await episodes([episode], seen, now: now);
+  }
+
+  Future<void> episodes(
+    Iterable<EpisodeData> episodes,
+    bool seen, {
+    DateTime? now,
+  }) async {
     final instant = now ?? DateTime.now();
-    if (seen && !episode.released(instant)) {
+    final items = episodes.toList();
+    if (seen && items.any((episode) => !episode.released(instant))) {
       throw const ApiFailure(
         'This episode has not been released yet or has no announced air date.',
       );
     }
-    await db.mark(episode.key, seen, instant);
+    await db.markMany(items.map((e) => e.key), seen, instant);
   }
 
   Future<void> movie(int id, bool seen) =>
       db.mark('movie:$id', seen, DateTime.now());
   Future<void> season(SeasonData season, bool seen, {DateTime? now}) async {
     final instant = now ?? DateTime.now();
-    await db.transaction(() async {
-      for (final episode in season.episodes) {
-        if (!seen || episode.released(instant)) {
-          await db.mark(episode.key, seen, instant);
-        }
-      }
-    });
+    await episodes(
+      season.episodes.where((e) => !seen || e.released(instant)),
+      seen,
+      now: instant,
+    );
   }
 }
 
