@@ -1,7 +1,7 @@
 name: next_episode
 description: Biblioteca locala de filme si seriale, cu progres si calendar TMDB.
 publish_to: none
-version: 0.1.2+10
+version: 0.1.2+11
 environment:
   sdk: ^3.13.2
 dependencies:
@@ -13,6 +13,8 @@ dependencies:
   path_provider: ^2.1.5
   html: ^0.15.7
   url_launcher: ^6.3.2
+  flutter_email_sender: ^11.1.0
+  share_plus: ^13.3.1
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.1
   package_info_plus: ^10.2.1

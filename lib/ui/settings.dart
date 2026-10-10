@@ -7,6 +7,7 @@ import '../data/alerts.dart';
 import 'common.dart';
 import 'alert_time_picker.dart';
 import 'legal.dart';
+import 'feedback.dart';
 import '../application/app_contact.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -216,6 +217,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             margin: EdgeInsets.zero,
             child: Column(
               children: [
+                ListTile(
+                  title: const Text('Update issues'),
+                  subtitle: const Text(
+                    'View recent problems and email a report',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => openScreen(context, const FeedbackScreen()),
+                ),
                 ListTile(
                   title: const Text('Email Support'),
                   subtitle: const Text(supportContactLabel),

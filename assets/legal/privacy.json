@@ -1,5 +1,5 @@
 {
-  "updated": "September 9, 2026",
+  "updated": "October 10, 2026",
   "sections": [
     {
       "title": "Who we are",
@@ -46,6 +46,10 @@
     {
       "title": "Email support",
       "body": "Email Support opens your email app. No message is sent unless you send it. If you contact us, we receive your email address, message and any attachments you choose to include. We use this information to respond, investigate the issue and handle privacy requests. Email is processed by the email services involved, including Gmail for the support address. Please do not send passwords, API keys or unnecessary sensitive information."
+    },
+    {
+      "title": "Update issue feedback",
+      "body": "When an update fails, the app keeps up to 20 recent issue records on your device. Each record contains the affected title, a short explanation and the time of the failure. These records are not sent automatically. If you tap Email report, the app creates a separate text-file report containing the displayed records, app version and operating system name, then opens an email composer or share sheet. You decide whether to send it. The recipient may need to be entered manually in the share-sheet path. Your email provider handles any message you send, including your sender address and the attachment. The report does not include your complete library, watched history, account credentials or catalog API token. The publisher uses received reports to investigate update failures; contact {{SUPPORT_EMAIL}} with privacy requests."
     },
     {
       "title": "Why information is used",

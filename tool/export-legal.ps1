@@ -29,7 +29,7 @@ foreach ($name in @('privacy', 'terms', 'support')) {
                 },
                 [pscustomobject]@{
                     title = 'Reporting a problem'
-                    body = 'Include your app version (Settings → Version), device model, operating system version and the steps that led to the problem. Screenshots are optional. Please remove private information and never send passwords or API keys.'
+                    body = 'For update problems, open Update issues in the app and tap Email report. The app prepares a separate text-file attachment and opens an email composer or share sheet; you choose whether to send it. On iPhone without an Apple Mail account, select an email app from the share sheet and enter the support address if needed. For other support requests, include your app version (Settings → Version), device model, operating system version and the steps that led to the problem. Screenshots are optional. Please remove private information and never send passwords or API keys.'
                     links = @()
                 },
                 [pscustomobject]@{

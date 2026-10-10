@@ -1,16 +1,16 @@
-# First TestFlight build — Codemagic workflow editor
+# TestFlight build — Codemagic workflow editor
 
-Status: preparation only. Apple Developer enrollment is pending. No signing credentials, app record or upload have been configured by this task.
+Checklist for the next build; verify signing and App Store Connect state in Codemagic before upload.
 
 ## Existing project
 
 - Entry point: `lib/main.dart`.
 - Bundle identifier: `ro.nextepisode.nextEpisode` (register exactly this identifier, or deliberately update the project before creating the app record).
-- Current version: `0.1.0+2`; build 1 was uploaded for pipeline verification. Increase the build number for every subsequent upload. Choose the public version before App Store release.
+- Next candidate version: `0.1.2+11`. Increase the build number for every subsequent upload; verify that build 11 has not already been used in App Store Connect before submitting it.
 - Minimum iOS version: 15.0.
 - Never use `lib/retention_preview.dart` or `DEMO=true` for a distributed build.
 
-## After enrollment becomes active
+## Build and upload
 
 1. Register the explicit App ID in the Apple developer account and create the matching iOS app in App Store Connect.
 2. Connect an App Store Connect API key to Codemagic using its integration settings. Keep the private key in the integration, not in Git.
@@ -34,14 +34,17 @@ Required values for this release:
 - `SUPPORT_EMAIL`: the public contact from the local configuration.
 - `DEMO=false`
 - `CONTENT_CONFIG_URL`: only set if a production configuration endpoint has been deployed and verified.
-- `SYNC_DIAGNOSTICS_ENABLED=true`: temporarily shows the safe per-title update
-  details button in TestFlight. Set it to `false` for the public release.
 
 Use `lib/main.dart`. Do not commit the configuration file containing the token, echo its contents in logs or add it to build artifacts. A token bundled in a mobile app remains extractable; CI secret storage does not make the installed token confidential.
 
-`SYNC_DIAGNOSTICS_ENABLED` is a Dart compile-time value. Changing it in
-Codemagic changes the next build only; an installed TestFlight build keeps the
-value it was built with.
+The update-issue screen is always available. Its local history has at most 20
+records; it does no network work at startup. Tapping Email report prepares a
+separate text-file attachment and opens the mail composer; the user must send
+the email. On iPhone, prefilled recipient plus attachment requires an Apple
+Mail account. If unavailable, the share sheet preserves the attachment but
+the recipient may need manual entry. Changing `SUPPORT_EMAIL` requires a new
+build. Before release, test both paths on real devices and confirm receipt in
+the support inbox. Review the privacy page and App Privacy answers.
 
 ## Release verification still required
 

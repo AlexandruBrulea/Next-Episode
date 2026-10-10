@@ -65,6 +65,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.2"
+  cross_file:
+    dependency: transitive
+    description:
+      name: cross_file
+      sha256: f141ea4f277af142a0356955707f6556f37b03947d39d55585981a06ca437bd6
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.5+5"
   crypto:
     dependency: transitive
     description:
@@ -158,6 +166,46 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  flutter_email_sender:
+    dependency: "direct main"
+    description:
+      name: flutter_email_sender
+      sha256: "29eda6e312ddaebf155839a48c1cb0d680079b4986fd466bc24bc927148f0086"
+      url: "https://pub.dev"
+    source: hosted
+    version: "11.1.0"
+  flutter_email_sender_linux:
+    dependency: transitive
+    description:
+      name: flutter_email_sender_linux
+      sha256: d10724fa5c1a4c597837e3ad77f50b2be1fc161fdd64e8e516228ecdb6357c58
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  flutter_email_sender_method_channel:
+    dependency: transitive
+    description:
+      name: flutter_email_sender_method_channel
+      sha256: "83cfea68187f00e929f13e8422758d67bb9b1b82525a5bbe165e57aeada67625"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.0"
+  flutter_email_sender_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_email_sender_platform_interface
+      sha256: d6825b9e91b2243619a0d22e41f5ff483b0760521302c18eadb4c150ffdee278
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
+  flutter_email_sender_web:
+    dependency: transitive
+    description:
+      name: flutter_email_sender_web
+      sha256: "628f38bb73ad5c40fcb68fb1feedb0da3a21850ea21d5005e08548997a6f6106"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   flutter_lints:
     dependency: "direct dev"
     description:
@@ -528,6 +576,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.4.3"
+  share_plus:
+    dependency: "direct main"
+    description:
+      name: share_plus
+      sha256: db40767f130189d53f3ae8a6393c217ff4a492da1baff718a9873679c0c00224
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.3.1"
+  share_plus_platform_interface:
+    dependency: transitive
+    description:
+      name: share_plus_platform_interface
+      sha256: "365ef7379fc22507256adda3385152942ffce08935452bc972c2e52a0bebae41"
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.2.0"
   sky_engine:
     dependency: transitive
     description: flutter

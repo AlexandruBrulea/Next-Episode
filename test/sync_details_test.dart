@@ -6,6 +6,7 @@ import 'package:next_episode/data/database.dart';
 import 'package:next_episode/data/repositories.dart';
 import 'package:next_episode/domain/models.dart';
 import 'package:next_episode/ui/home.dart';
+import 'package:next_episode/ui/feedback.dart';
 
 import 'fixtures.dart';
 
@@ -33,7 +34,7 @@ void main() {
             databaseProvider.overrideWithValue(db),
             apiProvider.overrideWithValue(api),
           ],
-          child: const MaterialApp(home: HomeScreen(showSyncDiagnostics: true)),
+          child: const MaterialApp(home: HomeScreen()),
         ),
       );
       await tester.pumpAndSettle();
@@ -45,14 +46,22 @@ void main() {
       );
       await tester.tap(find.text('Details'));
       await tester.pumpAndSettle();
-      expect(find.text('Library update details'), findsOneWidget);
-      expect(find.text('Offline'), findsOneWidget);
+      expect(find.text('Update issues'), findsOneWidget);
+      expect(find.textContaining('Offline'), findsOneWidget);
       expect(
         find.descendant(
-          of: find.byType(AlertDialog),
+          of: find.byType(FeedbackScreen),
           matching: find.text('Serial test'),
         ),
         findsOneWidget,
+      );
+      expect(find.text('Email report'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(FeedbackScreen),
+          matching: find.byType(TextField),
+        ),
+        findsNothing,
       );
       expect((await db.watched())['episode:10:1'], now);
       expect(await db.cached('series:10'), isNotNull);

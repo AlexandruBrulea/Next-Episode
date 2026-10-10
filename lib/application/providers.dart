@@ -6,6 +6,7 @@ import 'package:flutter/painting.dart';
 import '../data/database.dart';
 import '../data/alerts.dart';
 import '../data/repositories.dart';
+import '../data/feedback.dart';
 import '../data/tmdb_retention.dart';
 import '../domain/catalog_provider.dart';
 
@@ -23,6 +24,7 @@ final tmdbAllowedProvider = FutureProvider<bool>(
   (ref) => ref.watch(databaseProvider).tmdbContentAllowed(),
 );
 final episodeAlertsProvider = Provider((ref) => EpisodeAlerts());
+final feedbackSenderProvider = Provider((ref) => FeedbackSender());
 final alertErrorProvider = NotifierProvider<AlertError, String?>(
   AlertError.new,
 );

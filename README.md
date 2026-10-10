@@ -25,8 +25,18 @@ CONTENT_PROVIDER=tvmaze
 CONTENT_GENERATION=1
 CONTENT_CONFIG_URL=
 TMDB_TOKEN=
-SYNC_DIAGNOSTICS_ENABLED=false
+SUPPORT_EMAIL=
 ```
+
+Aplicația păstrează local cel mult 20 de erori scurte de sincronizare și nu
+generează raportul la pornire. La apăsarea „Email report”, pregătește un fișier
+text separat cu erorile și versiunea aplicației, apoi deschide compozitorul de
+email cu `SUPPORT_EMAIL` ca destinatar. Utilizatorul verifică mesajul și apasă
+Send. Pe iPhone fără un cont configurat în Apple Mail, se deschide meniul de
+partajare cu fișierul; utilizatorul alege aplicația de email și poate fi necesar
+să introducă manual destinatarul. Nu există Formspree sau trimitere automată.
+Adresa `SUPPORT_EMAIL` este o valoare de compilare, nu o setare editabilă în
+aplicație; schimbarea ei necesită un build nou.
 
 Pentru trecerea la TMDB: setează `CONTENT_PROVIDER=tmdb`, completează `TMDB_TOKEN` cu Read Access Token/Bearer și crește `CONTENT_GENERATION` (de exemplu la 2). Distribuie noul build. `CATALOG_PROVIDER` este acceptat doar ca alias de compatibilitate atunci când `CONTENT_PROVIDER` lipsește. Fișierul `.env` existent nu este rescris automat.
 

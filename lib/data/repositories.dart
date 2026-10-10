@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../domain/models.dart';
 import 'database.dart';
+import 'feedback.dart';
 import 'catalog/catalog_router.dart';
 import '../domain/catalog_provider.dart';
 
@@ -246,6 +247,17 @@ class SyncRepository {
               e is ApiFailure ? e.message : 'An unexpected update error occurred. Please try again later.',
             ),
           );
+        }
+      }
+      if (issues.isNotEmpty) {
+        try {
+          await FeedbackIssueStore(db).record([
+            for (final issue in issues)
+              FeedbackIssue(issue.title, issue.message, DateTime.now()),
+          ]);
+        } catch (_) {
+          // Reporting must never turn a recoverable catalog failure into a
+          // failure of the library sync itself.
         }
       }
       return SyncReport(

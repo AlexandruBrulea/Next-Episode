@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
 import '../data/repositories.dart';
+import '../data/feedback.dart';
 import '../domain/models.dart';
 import 'common.dart';
 import 'details.dart';
@@ -12,16 +13,11 @@ import 'feeds.dart';
 import 'app_theme.dart';
 import 'library_filter.dart';
 import 'library_grid.dart';
+import 'feedback.dart';
 import 'settings.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  final bool showSyncDiagnostics;
-  const HomeScreen({
-    super.key,
-    this.showSyncDiagnostics = const bool.fromEnvironment(
-      'SYNC_DIAGNOSTICS_ENABLED',
-    ),
-  });
+  const HomeScreen({super.key});
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
@@ -61,32 +57,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   String? syncMessage;
   List<SyncIssue> syncIssues = const [];
   void showSyncDetails() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Library update details'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              Text(
-                '${syncIssues.length} ${syncIssues.length == 1 ? 'title' : 'titles'} could not be updated. Your watched progress has been kept.',
-              ),
-              for (final issue in syncIssues)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(issue.title),
-                  subtitle: SelectableText(issue.message),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
+    openScreen(
+      context,
+      FeedbackScreen(
+        currentIssues: [
+          for (final issue in syncIssues)
+            FeedbackIssue(issue.title, issue.message, DateTime.now()),
         ],
       ),
     );
@@ -188,7 +164,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           MaterialBanner(
             content: Text(syncMessage!),
             actions: [
-              if (widget.showSyncDiagnostics && syncIssues.isNotEmpty)
+              if (syncIssues.isNotEmpty)
                 TextButton(
                   onPressed: showSyncDetails,
                   child: const Text('Details'),
