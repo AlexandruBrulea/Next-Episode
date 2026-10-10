@@ -6,7 +6,7 @@ Checklist for the next build; verify signing and App Store Connect state in Code
 
 - Entry point: `lib/main.dart`.
 - Bundle identifier: `ro.nextepisode.nextEpisode` (register exactly this identifier, or deliberately update the project before creating the app record).
-- Next candidate version: `0.1.2+11`. Increase the build number for every subsequent upload; verify that build 11 has not already been used in App Store Connect before submitting it.
+- Next candidate version: `0.1.3+12`. The attempted `0.1.2+11` archive was rejected because `0.1.2` is already approved and its upload train is closed. Increase the public version beyond the latest approved version and use a new build number for each subsequent upload; verify that `0.1.3` is not already approved or closed in App Store Connect.
 - Minimum iOS version: 15.0.
 - Never use `lib/retention_preview.dart` or `DEMO=true` for a distributed build.
 
