@@ -21,9 +21,11 @@ typedef _FeedRow = ({
   TitleData title,
   EpisodeData? episode,
   int? count,
+  int? remaining,
 });
 
 class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
+  static const _pageSize = 2;
   final Map<String, int> _visibleCounts = {};
 
   @override
@@ -53,12 +55,13 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                         ..sort(episodeOrder);
                   if (episodes.isEmpty) continue;
                   final title = bundle.title;
-                  final count = _visibleCounts[title.key] ?? 5;
+                  final count = _visibleCounts[title.key] ?? _pageSize;
                   rows.add((
                     key: 'header:${title.key}',
                     title: title,
                     episode: null,
                     count: episodes.length,
+                    remaining: null,
                   ));
                   for (final episode in episodes.take(count)) {
                     rows.add((
@@ -66,6 +69,7 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                       title: title,
                       episode: episode,
                       count: null,
+                      remaining: null,
                     ));
                   }
                   if (episodes.length > count) {
@@ -74,6 +78,7 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                       title: title,
                       episode: null,
                       count: null,
+                      remaining: episodes.length - count,
                     ));
                   }
                 }
@@ -109,6 +114,8 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                       );
                     }
                     if (episode == null) {
+                      final remaining = row.remaining!;
+                      final nextCount = remaining.clamp(1, _pageSize);
                       return Padding(
                         key: key,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -117,9 +124,14 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                           child: TextButton(
                             onPressed: () => setState(() {
                               _visibleCounts[row.title.key] =
-                                  (_visibleCounts[row.title.key] ?? 5) + 3;
+                                  (_visibleCounts[row.title.key] ?? _pageSize) +
+                                  nextCount;
                             }),
-                            child: const Text('Show more'),
+                            child: Text(
+                              remaining == 1
+                                  ? 'Show 1 more episode'
+                                  : 'Show $nextCount out of $remaining more episodes',
+                            ),
                           ),
                         ),
                       );
@@ -129,9 +141,7 @@ class _EpisodeFeedState extends ConsumerState<EpisodeFeed> {
                       child: ListTile(
                         leading: Poster(row.title.poster),
                         title: Text('${episode.code} • ${episode.title}'),
-                        subtitle: Text(
-                          '${dateLabel(episode.airDate)}${row.title.networks.isEmpty ? '' : '\n${row.title.networks.join(', ')}'}',
-                        ),
+                        subtitle: Text(dateLabel(episode.airDate)),
                         onTap: () => openScreen(
                           context,
                           EpisodeScreen(title: row.title, episode: episode),

@@ -7,8 +7,69 @@ import 'package:next_episode/data/demo_source.dart';
 import 'package:next_episode/data/repositories.dart';
 import 'package:next_episode/ui/feeds.dart';
 import 'package:next_episode/ui/details.dart';
+import 'package:next_episode/domain/models.dart';
+
+import 'fixtures.dart';
 
 void main() {
+  testWidgets(
+    'To Watch stays compact with twenty networks without removing metadata',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final db = AppDatabase.memory();
+      final source = bundle(episodes: [episodeJson(1, 1)]);
+      final title = TitleData(MediaType.tv, {
+        ...source.title.raw,
+        'networks': [
+          for (var i = 1; i <= 20; i++) {'name': 'Broadcast platform $i'},
+        ],
+      });
+      final api = FakeApi()..value = SeriesBundle(title, source.seasons);
+      await SeriesRepository(api, db).load(title.id);
+      await db.add(title, DateTime.now());
+      final container = ProviderContainer(
+        overrides: [
+          databaseProvider.overrideWithValue(db),
+          apiProvider.overrideWithValue(api),
+        ],
+      );
+      await container.read(libraryProvider.future);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: EpisodeFeed(calendar: false)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('S01E01'), findsOneWidget);
+      expect(
+        find.text(dateLabel(source.episodes.first.airDate)),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Broadcast platform'), findsNothing);
+      expect(tester.getSize(find.byType(Card).first).height, lessThan(160));
+      expect(
+        container
+            .read(libraryProvider)
+            .requireValue
+            .series[title.id]!
+            .title
+            .networks,
+        hasLength(20),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      container.dispose();
+      await db.close();
+    },
+  );
+
   testWidgets(
     'mobile feeds separate aired, future, unknown, specials and movies',
     (tester) async {

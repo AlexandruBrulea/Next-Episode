@@ -29,6 +29,96 @@ LibrarySnapshot library(Iterable<SeriesBundle> shows) => LibrarySnapshot(
 );
 
 void main() {
+  testWidgets(
+    'To Watch reveals episodes 6-7, then 8-9, then the final episode',
+    (tester) async {
+      final source = show(1);
+      final bundle = SeriesBundle(source.title, [
+        SeasonData(1, {
+          ...source.seasons.first.raw,
+          'episodes': source.episodes.take(10).map((e) => e.raw).toList(),
+        }),
+      ]);
+      final controller = MemoryLibrary(
+        library([bundle]).withWatched({
+          for (final e in bundle.episodes.take(5)) e.key: DateTime.now(),
+        }),
+      );
+      final container = ProviderContainer(
+        overrides: [libraryProvider.overrideWith(() => controller)],
+      );
+      addTearDown(container.dispose);
+      await container.read(libraryProvider.future);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: EpisodeFeed(calendar: false)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(Card), findsNWidgets(2));
+      expect(find.textContaining('S01E06'), findsOneWidget);
+      expect(find.textContaining('S01E07'), findsOneWidget);
+      expect(find.textContaining('S01E08'), findsNothing);
+      expect(find.textContaining('S01E05'), findsNothing);
+      await tester.tap(find.text('Show 2 out of 3 more episodes'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Card), findsNWidgets(4));
+      for (var n = 6; n <= 9; n++) {
+        expect(find.textContaining('S01E0$n'), findsOneWidget);
+      }
+      expect(find.textContaining('S01E10'), findsNothing);
+      await tester.ensureVisible(find.text('Show 1 more episode'));
+      await tester.tap(find.text('Show 1 more episode'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Card), findsNWidgets(5));
+      expect(find.textContaining('S01E10'), findsOneWidget);
+      expect(find.textContaining('more episode'), findsNothing);
+      expect(controller.snapshot.watched, hasLength(5));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final count in [1, 2, 4]) {
+    testWidgets(
+      'To Watch handles $count remaining episodes without an empty load',
+      (tester) async {
+        final source = show(1);
+        final bundle = SeriesBundle(source.title, [
+          SeasonData(1, {
+            ...source.seasons.first.raw,
+            'episodes': source.episodes.take(count).map((e) => e.raw).toList(),
+          }),
+        ]);
+        final controller = MemoryLibrary(library([bundle]));
+        final container = ProviderContainer(
+          overrides: [libraryProvider.overrideWith(() => controller)],
+        );
+        addTearDown(container.dispose);
+        await container.read(libraryProvider.future);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(body: EpisodeFeed(calendar: false)),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(Card), findsNWidgets(count.clamp(0, 2)));
+        if (count == 4) {
+          await tester.tap(find.text('Show 2 out of 2 more episodes'));
+          await tester.pumpAndSettle();
+          expect(find.byType(Card), findsNWidgets(4));
+        }
+        expect(find.textContaining('more episode'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('210 shows build To Watch rows on demand with an ahead buffer', (
     tester,
   ) async {
@@ -55,18 +145,20 @@ void main() {
     await tester.pumpAndSettle();
     final list = tester.widget<ListView>(find.byType(ListView));
     expect(list.childrenDelegate, isA<SliverChildBuilderDelegate>());
-    expect(list.childrenDelegate.estimatedChildCount, 210 * 7);
+    expect(list.childrenDelegate.estimatedChildCount, 210 * 4);
     expect(list.scrollCacheExtent?.value, 1);
     expect(find.byType(Card).evaluate().length, lessThan(30));
-    await tester.ensureVisible(find.text('Show more').first);
-    await tester.tap(find.text('Show more').first);
+    await tester.ensureVisible(
+      find.text('Show 2 out of 78 more episodes').first,
+    );
+    await tester.tap(find.text('Show 2 out of 78 more episodes').first);
     await tester.pumpAndSettle();
     expect(
       tester
           .widget<ListView>(find.byType(ListView))
           .childrenDelegate
           .estimatedChildCount,
-      210 * 7 + 3,
+      210 * 4 + 2,
     );
     await tester.drag(find.byType(ListView), const Offset(0, -4000));
     await tester.pumpAndSettle();
