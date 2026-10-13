@@ -22,7 +22,7 @@ void main() {
     expect(s.id, 100);
     expect(e.seriesId, 10);
     expect(e.seasonId, 100);
-    expect(e.title, 'Episodul 1');
+    expect(e.title, 'Episode 1');
     expect(e.code, 'S01E01');
     expect(e.runtime, 42);
     expect(e.rating, 8.1);

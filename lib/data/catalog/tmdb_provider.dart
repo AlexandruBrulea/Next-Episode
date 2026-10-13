@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import '../../domain/models.dart';
 import '../../domain/catalog_provider.dart';
 import '../tmdb_retention.dart';
+import 'tmdb_transport.dart';
 
 class TmdbProvider extends CatalogProvider {
   @override
@@ -18,62 +19,46 @@ class TmdbProvider extends CatalogProvider {
   final Dio dio;
   final String token;
   final Future<void> Function()? checkContentAccess;
+  late final TmdbTransport _transport;
   TmdbProvider({
     required this.token,
     this.checkContentAccess,
     Dio? client,
+    int maxAttempts = 3,
+    int concurrency = 4,
+    Duration connectTimeout = const Duration(seconds: 12),
+    Duration receiveTimeout = const Duration(seconds: 20),
+    Duration requestBudget = const Duration(seconds: 60),
+    DateTime Function()? now,
+    Future<void> Function(Duration)? sleep,
+    double Function()? random,
     String baseUrl = 'https://api.themoviedb.org/3',
   }) : dio =
            client ??
            Dio(
              BaseOptions(
                baseUrl: baseUrl,
-               connectTimeout: const Duration(seconds: 12),
-               receiveTimeout: const Duration(seconds: 20),
+               connectTimeout: connectTimeout,
+               receiveTimeout: receiveTimeout,
              ),
-           );
+           ) {
+    _transport = TmdbTransport(
+      dio: dio,
+      token: token,
+      checkContentAccess: checkContentAccess,
+      maxAttempts: maxAttempts,
+      concurrency: concurrency,
+      requestBudget: requestBudget,
+      now: now,
+      sleep: sleep,
+      random: random,
+    );
+  }
   Future<Json> _get(
     String path,
     String language, [
     Json parameters = const {},
-  ]) async {
-    await checkContentAccess?.call();
-    if (token.trim().isEmpty) {
-      throw const ApiFailure(
-        'Missing TMDB token. Configure TMDB_TOKEN as described in the README. Your local library is still available.',
-      );
-    }
-    try {
-      final response = await dio.get<dynamic>(
-        path,
-        queryParameters: {...parameters, 'language': language},
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer $token',
-            'accept': 'application/json',
-          },
-        ),
-      );
-      await checkContentAccess?.call();
-      if (response.data is! Map) throw const FormatException();
-      return Json.from(response.data);
-    } on DioException catch (e) {
-      throw ApiFailure(switch (e.type) {
-        DioExceptionType.connectionTimeout ||
-        DioExceptionType.receiveTimeout ||
-        DioExceptionType.sendTimeout => 'TMDB timed out. Please try again.',
-        DioExceptionType.connectionError =>
-          'No connection. Check your internet connection.',
-        _ => switch (e.response?.statusCode) {
-          401 || 403 => 'Invalid or unauthorized TMDB token.',
-          429 => 'Too many TMDB requests. Please try again later.',
-          _ => 'Unable to load TMDB data. Please try again.',
-        },
-      });
-    } on FormatException {
-      throw const ApiFailure('Invalid TMDB response.');
-    }
-  }
+  ]) => _transport.get(path, language, parameters);
 
   Future<Json> _localized(String path, [Json parameters = const {}]) async {
     return _get(path, 'en-US', parameters);
@@ -214,5 +199,5 @@ class TmdbProvider extends CatalogProvider {
   }
 
   @override
-  void close() => dio.close();
+  void close() => _transport.close();
 }

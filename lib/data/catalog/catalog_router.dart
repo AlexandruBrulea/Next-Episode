@@ -6,6 +6,7 @@ import '../../domain/catalog_provider.dart';
 import '../../domain/models.dart';
 import '../database.dart';
 import '../tmdb_retention.dart';
+import '../request_control.dart';
 import 'internal_catalog.dart';
 
 /// Public reads use the committed catalog. Only the administrative migration
@@ -16,6 +17,8 @@ class CatalogRouter extends CatalogProvider {
   final String requested;
   String _active;
   bool _initialized = false;
+  final _seriesRequests = SingleFlight<SeriesBundle>();
+  final _titleRequests = SingleFlight<TitleData>();
   Future<void> Function()? refreshConfiguration;
   CatalogRouter({
     required this.db,
@@ -221,6 +224,39 @@ class CatalogRouter extends CatalogProvider {
   Future<TitleData> title(MediaType type, int id) async {
     await initialize();
     final old = await identity(type, id);
+    final revision = await _revision();
+    return _titleRequests.run(
+      '${old.key}:${old.provider}:${old.sourceId}:$revision',
+      () => _loadTitle(type, id, old, revision),
+    );
+  }
+
+  Future<int> _revision() async =>
+      (await db
+              .customSelect(
+                'SELECT generation FROM content_state WHERE singleton=1',
+              )
+              .getSingle())
+          .read<int>('generation');
+
+  Future<void> _checkIdentity(TitleData old, int revision) async {
+    final current = await identity(old.type, old.id);
+    if (current.provider != old.provider ||
+        current.sourceId != old.sourceId ||
+        await _revision() != revision) {
+      throw const CatalogConflict(
+        'stale_request',
+        'Catalog changed during request',
+      );
+    }
+  }
+
+  Future<TitleData> _loadTitle(
+    MediaType type,
+    int id,
+    TitleData old,
+    int revision,
+  ) async {
     if (old.provider == 'tmdb') await db.requireTmdbContent();
     final module = modules[old.provider];
     if (module == null) {
@@ -234,12 +270,7 @@ class CatalogRouter extends CatalogProvider {
     });
     if (type == MediaType.movie) {
       await db.transaction(() async {
-        if ((await identity(type, id)).provider != old.provider) {
-          throw const CatalogConflict(
-            'stale_request',
-            'Catalog changed during request',
-          );
-        }
+        await _checkIdentity(old, revision);
         await InternalCatalog(db).saveTitle(local);
         await db.cache('movie:$id', local.raw, DateTime.now());
         await db.updateTitle(local, DateTime.now());
@@ -252,6 +283,14 @@ class CatalogRouter extends CatalogProvider {
   Future<SeriesBundle> series(int id) async {
     await initialize();
     final old = await identity(MediaType.tv, id);
+    final revision = await _revision();
+    return _seriesRequests.run(
+      '${old.key}:${old.provider}:${old.sourceId}:$revision',
+      () => _loadSeries(id, old, revision),
+    );
+  }
+
+  Future<SeriesBundle> _loadSeries(int id, TitleData old, int revision) async {
     if (old.provider == 'tmdb') await db.requireTmdbContent();
     final module = modules[old.provider];
     if (module == null) {
@@ -260,19 +299,18 @@ class CatalogRouter extends CatalogProvider {
     final remote = await module.series(old.sourceId);
     try {
       return await db.transaction(() async {
-        if ((await identity(MediaType.tv, id)).provider != old.provider) {
-          throw const CatalogConflict(
-            'stale_request',
-            'Catalog changed during request',
-          );
-        }
+        await _checkIdentity(old, revision);
         final store = InternalCatalog(db);
         final result = await store.bind(id, remote, allowRemovals: true);
         await store.persist(result);
         return result;
       });
     } on CatalogConflict catch (e) {
-      await db.administrativeConflict(old.key, e.toString());
+      try {
+        await db.administrativeConflict(old.key, e.toString());
+      } catch (_) {
+        // A logging failure must not replace the safe identity error.
+      }
       throw ApiFailure(
         'The episode listing changed and could not be safely matched to your saved progress. '
         'The previous listing has been kept. Reference: ${e.code}.',

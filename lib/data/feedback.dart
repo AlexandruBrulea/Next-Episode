@@ -8,18 +8,32 @@ import 'package:share_plus/share_plus.dart';
 
 import '../application/app_contact.dart';
 import 'database.dart';
+import '../domain/request_diagnostic.dart';
 
 class FeedbackIssue {
   final String title;
   final String reason;
   final DateTime occurredAt;
+  final String? entityKey;
+  final RequestDiagnostic? diagnostic;
+  final DateTime? resolvedAt;
 
-  const FeedbackIssue(this.title, this.reason, this.occurredAt);
+  const FeedbackIssue(
+    this.title,
+    this.reason,
+    this.occurredAt, {
+    this.entityKey,
+    this.diagnostic,
+    this.resolvedAt,
+  });
 
-  Map<String, String> toJson() => {
+  Map<String, Object?> toJson() => {
     'title': title,
     'reason': reason,
     'occurredAt': occurredAt.toUtc().toIso8601String(),
+    if (entityKey != null) 'entityKey': entityKey,
+    if (diagnostic != null) 'request': diagnostic!.toJson(),
+    if (resolvedAt != null) 'resolvedAt': resolvedAt!.toUtc().toIso8601String(),
   };
 
   static FeedbackIssue? fromJson(Object? value) {
@@ -35,11 +49,20 @@ class FeedbackIssue {
       (value['title'] as String).trim(),
       (value['reason'] as String).trim(),
       date,
+      entityKey:
+          value['entityKey'] is String &&
+              RegExp(r'^(tv|movie):\d+$').hasMatch(value['entityKey'] as String)
+          ? value['entityKey'] as String
+          : null,
+      diagnostic: RequestDiagnostic.fromJson(value['request']),
+      resolvedAt: value['resolvedAt'] is String
+          ? DateTime.tryParse(value['resolvedAt'] as String)
+          : null,
     );
   }
 }
 
-/// Reads no episode cache and writes only when a sync has failed.
+/// Bounded local diagnostics. Reads no episode cache or watched history.
 class FeedbackIssueStore {
   static const _key = 'recent_sync_issues';
   static const maxIssues = 20;
@@ -64,9 +87,19 @@ class FeedbackIssueStore {
     }
   }
 
-  Future<void> record(List<FeedbackIssue> failures) async {
-    if (failures.isEmpty) return;
+  Future<void> record(
+    List<FeedbackIssue> failures, {
+    Set<String> resolvedKeys = const {},
+    DateTime? resolvedAt,
+  }) async {
+    if (failures.isEmpty && resolvedKeys.isEmpty) return;
     final previous = await load();
+    if (failures.isEmpty &&
+        !previous.any(
+          (e) => e.resolvedAt == null && resolvedKeys.contains(e.entityKey),
+        )) {
+      return;
+    }
     final unique = <String, FeedbackIssue>{};
     for (final issue in [...failures.reversed, ...previous]) {
       final safe = FeedbackIssue(
@@ -75,15 +108,24 @@ class FeedbackIssueStore {
             ? issue.reason.substring(0, 240)
             : issue.reason,
         issue.occurredAt,
+        entityKey: issue.entityKey,
+        diagnostic: issue.diagnostic,
+        resolvedAt: resolvedKeys.contains(issue.entityKey)
+            ? issue.resolvedAt ?? resolvedAt ?? DateTime.now()
+            : issue.resolvedAt,
       );
-      unique.putIfAbsent('${safe.title}\u0000${safe.reason}', () => safe);
+      unique.putIfAbsent(
+        '${safe.entityKey ?? safe.title}\u0000${safe.reason}',
+        () => safe,
+      );
     }
-    await db.setPreference(
-      _key,
-      jsonEncode(
-        unique.values.take(maxIssues).map((issue) => issue.toJson()).toList(),
-      ),
+    final encoded = jsonEncode(
+      unique.values.take(maxIssues).map((issue) => issue.toJson()).toList(),
     );
+    if (encoded !=
+        jsonEncode(previous.map((issue) => issue.toJson()).toList())) {
+      await db.setPreference(_key, encoded);
+    }
   }
 }
 
@@ -140,9 +182,18 @@ class FeedbackSender {
       'Next Episode update issue report',
       'App: ${app.version} (${app.buildNumber})',
       'Platform: ${Platform.operatingSystem}',
+      'Report format: 2 (request durations include retries; no headers or response bodies)',
+      'Sync concurrency: ${const int.fromEnvironment('SYNC_CONCURRENCY', defaultValue: 3).clamp(1, 4)}',
       'Issues:',
       for (final issue in issues.take(FeedbackIssueStore.maxIssues))
-        '${issue.occurredAt.toUtc().toIso8601String()} | ${issue.title}: ${issue.reason}',
+        '${issue.occurredAt.toUtc().toIso8601String()} | ${issue.title}: ${issue.reason}\n'
+            '  State: ${issue.resolvedAt != null
+                ? 'resolved at ${issue.resolvedAt!.toUtc().toIso8601String()}'
+                : issue.entityKey == null
+                ? 'historical (current state unknown)'
+                : 'unresolved at last attempt'}'
+            '${issue.entityKey == null ? '' : '\n  Resource: ${issue.entityKey}'}'
+            '${issue.diagnostic == null ? '' : '\n  Request: ${jsonEncode(issue.diagnostic!.toJson())}'}',
     ].join('\n');
     final bytes = Uint8List.fromList(utf8.encode('$report\n'));
     final filename = 'next-episode-update-report.txt';

@@ -1,8 +1,10 @@
 import 'models.dart';
+import 'request_diagnostic.dart';
 
 class ApiFailure implements Exception {
   final String message;
-  const ApiFailure(this.message);
+  final RequestDiagnostic? diagnostic;
+  const ApiFailure(this.message, {this.diagnostic});
   @override
   String toString() => message;
 }

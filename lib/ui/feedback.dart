@@ -102,7 +102,9 @@ class _FeedbackScreenState extends ConsumerState<FeedbackScreen> {
                     child: ListTile(
                       leading: const Icon(Icons.warning_amber_outlined),
                       title: Text(issue.title),
-                      subtitle: Text('${issue.reason}\n$timeLabel'),
+                      subtitle: Text(
+                        '${issue.reason}\n$timeLabel${issue.resolvedAt != null ? ' · Resolved' : ''}',
+                      ),
                       isThreeLine: true,
                     ),
                   );

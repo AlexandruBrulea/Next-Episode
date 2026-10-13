@@ -5,12 +5,15 @@ import 'database.dart';
 import 'feedback.dart';
 import 'catalog/catalog_router.dart';
 import '../domain/catalog_provider.dart';
+import '../domain/request_diagnostic.dart';
+import 'request_control.dart';
 
 class Loaded<T> {
   final T value;
   final bool offline;
   final String? warning;
-  const Loaded(this.value, {this.offline = false, this.warning});
+  final ApiFailure? failure;
+  const Loaded(this.value, {this.offline = false, this.warning, this.failure});
 }
 
 class SeriesRepository {
@@ -85,6 +88,7 @@ class MoviesRepository {
           warning: error is ApiFailure
               ? error.message
               : 'Movie information could not be updated.',
+          failure: error is ApiFailure ? error : null,
         );
       }
       rethrow;
@@ -154,15 +158,45 @@ class SyncReport {
 
 class SyncIssue {
   final String title, message;
-  const SyncIssue(this.title, this.message);
+  final String? entityKey;
+  final DateTime? occurredAt;
+  final RequestDiagnostic? diagnostic;
+  const SyncIssue(
+    this.title,
+    this.message, {
+    this.entityKey,
+    this.occurredAt,
+    this.diagnostic,
+  });
+  FeedbackIssue toFeedback() => FeedbackIssue(
+    title,
+    message,
+    occurredAt ?? DateTime.now(),
+    entityKey: entityKey,
+    diagnostic: diagnostic,
+  );
 }
 
 class SyncRepository {
   final AppDatabase db;
   final SeriesRepository series;
   final MoviesRepository movies;
-  bool _running = false;
-  SyncRepository(this.db, this.series, this.movies);
+  final int concurrency;
+  final DateTime Function() now;
+  final _refreshes = SingleFlight<SyncReport>();
+  final _failures =
+      <String, ({DateTime retryAt, SyncIssue issue, String identity})>{};
+  SyncRepository(
+    this.db,
+    this.series,
+    this.movies, {
+    int concurrency = const int.fromEnvironment(
+      'SYNC_CONCURRENCY',
+      defaultValue: 3,
+    ),
+    DateTime Function()? now,
+  }) : concurrency = concurrency.clamp(1, 4),
+       now = now ?? DateTime.now;
   static SyncChanges compare(SeriesBundle? before, SeriesBundle after) {
     String metadata(TitleData title) => jsonEncode({
       for (final entry in title.raw.entries)
@@ -191,34 +225,62 @@ class SyncRepository {
     );
   }
 
-  Future<SyncReport> refresh({bool onlyStale = false}) async {
-    if (_running) return const SyncReport([], []);
-    _running = true;
+  Future<SyncReport> refresh({bool onlyStale = false}) =>
+      _refreshes.run('library', () => _refresh(onlyStale: onlyStale));
+
+  Future<SyncReport> _refresh({required bool onlyStale}) async {
     final changes = <SyncChanges>[];
     final errors = <String>[];
     final issues = <SyncIssue>[];
     final refreshedKeys = <String>{};
-    try {
-      final entries = await db.library(); // Also removes expired cache rows.
-      final cachedKeys = {
-        for (final row in await db.customSelect('SELECT key FROM cache').get())
-          row.read<String>('key'),
-      };
-      for (final entry in entries) {
-        if (onlyStale &&
-            entry.title.provider == series.api.id &&
-            entry.updatedAt != null &&
-            DateTime.now().difference(entry.updatedAt!) <
-                (['Ended', 'Canceled'].contains(entry.title.status)
-                    ? const Duration(days: 7)
-                    : const Duration(hours: 6)) &&
-            cachedKeys.contains(
-              entry.title.isTv
-                  ? 'series:${entry.title.id}'
-                  : 'movie:${entry.title.id}',
-            )) {
-          continue;
-        }
+    final entries = await db.library(); // Also removes expired cache rows.
+    final keys = entries.map((e) => e.title.key).toSet();
+    _failures.removeWhere((key, _) => !keys.contains(key));
+    final cachedKeys = {
+      for (final row in await db.customSelect('SELECT key FROM cache').get())
+        row.read<String>('key'),
+    };
+    final pending = <LibraryEntry>[];
+    for (final entry in entries) {
+      final deferred = _failures[entry.title.key];
+      if (onlyStale &&
+          deferred != null &&
+          now().isBefore(deferred.retryAt) &&
+          deferred.identity ==
+              '${entry.title.provider}:${entry.title.sourceId}') {
+        issues.add(deferred.issue);
+        errors.add('${deferred.issue.title}: ${deferred.issue.message}');
+        continue;
+      }
+      if (onlyStale &&
+          entry.title.provider == series.api.id &&
+          entry.updatedAt != null &&
+          now().difference(entry.updatedAt!) <
+              (['Ended', 'Canceled'].contains(entry.title.status)
+                  ? const Duration(days: 7)
+                  : const Duration(hours: 6)) &&
+          cachedKeys.contains(
+            entry.title.isTv
+                ? 'series:${entry.title.id}'
+                : 'movie:${entry.title.id}',
+          )) {
+        continue;
+      }
+      pending.add(entry);
+    }
+    // Active shows first; retain the existing ordering within each group.
+    final ordered = [
+      ...pending.where(
+        (e) => e.title.isTv && !['Ended', 'Canceled'].contains(e.title.status),
+      ),
+      ...pending.where(
+        (e) => !e.title.isTv || ['Ended', 'Canceled'].contains(e.title.status),
+      ),
+    ];
+    var next = 0;
+    Future<void> worker() async {
+      while (next < ordered.length) {
+        final entry = ordered[next++];
         try {
           if (entry.title.isTv) {
             final old = await series.cached(entry.title.id);
@@ -232,42 +294,70 @@ class SyncRepository {
           } else {
             final result = await movies.load(entry.title.id, refresh: true);
             if (result.offline) {
-              throw ApiFailure(
-                result.warning ?? 'Movie information could not be updated.',
-              );
+              throw result.failure ??
+                  ApiFailure(
+                    result.warning ?? 'Movie information could not be updated.',
+                  );
             }
           }
           refreshedKeys.add(entry.title.key);
+          _failures.remove(entry.title.key);
         } catch (e) {
-          await db.administrativeConflict(entry.title.key, '$e');
-          errors.add('${entry.title.title}: $e');
-          issues.add(
-            SyncIssue(
-              entry.title.title,
-              e is ApiFailure ? e.message : 'An unexpected update error occurred. Please try again later.',
-            ),
+          final message = e is ApiFailure
+              ? e.message
+              : 'An unexpected update error occurred. Please try again later.';
+          final diagnostic = e is ApiFailure ? e.diagnostic : null;
+          final issue = SyncIssue(
+            entry.title.title,
+            message,
+            entityKey: entry.title.key,
+            occurredAt: diagnostic?.occurredAt ?? now(),
+            diagnostic: diagnostic,
           );
+          errors.add('${entry.title.title}: $message');
+          issues.add(issue);
+          _failures[entry.title.key] = (
+            retryAt: now().add(
+              diagnostic?.statusCode == 404
+                  ? const Duration(days: 1)
+                  : const Duration(minutes: 5),
+            ),
+            issue: issue,
+            identity: '${entry.title.provider}:${entry.title.sourceId}',
+          );
+          try {
+            await db.administrativeConflict(
+              entry.title.key,
+              jsonEncode({
+                'message': message,
+                if (diagnostic != null) 'request': diagnostic.toJson(),
+              }),
+            );
+          } catch (_) {
+            // Diagnostic storage must never prevent other titles from syncing.
+          }
         }
       }
-      if (issues.isNotEmpty) {
-        try {
-          await FeedbackIssueStore(db).record([
-            for (final issue in issues)
-              FeedbackIssue(issue.title, issue.message, DateTime.now()),
-          ]);
-        } catch (_) {
-          // Reporting must never turn a recoverable catalog failure into a
-          // failure of the library sync itself.
-        }
-      }
-      return SyncReport(
-        changes,
-        errors,
-        refreshedKeys: refreshedKeys,
-        issues: issues,
-      );
-    } finally {
-      _running = false;
     }
+
+    await Future.wait(List.generate(concurrency, (_) => worker()));
+    if (issues.isNotEmpty || refreshedKeys.isNotEmpty) {
+      try {
+        await FeedbackIssueStore(db).record(
+          [for (final issue in issues) issue.toFeedback()],
+          resolvedKeys: refreshedKeys,
+          resolvedAt: now(),
+        );
+      } catch (_) {
+        // Reporting must never turn a recoverable catalog failure into a
+        // failure of the library sync itself.
+      }
+    }
+    return SyncReport(
+      changes,
+      errors,
+      refreshedKeys: refreshedKeys,
+      issues: issues,
+    );
   }
 }

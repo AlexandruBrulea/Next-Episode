@@ -83,6 +83,6 @@ void main() {
     ).refresh();
     expect(report.issues.single.title, 'Serial test');
     expect(report.issues.single.message, isNot(contains('private diagnostic')));
-    expect(report.errors.single, contains('private diagnostic'));
+    expect(report.errors.single, isNot(contains('private diagnostic')));
   });
 }

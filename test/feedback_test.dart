@@ -4,6 +4,7 @@ import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:next_episode/data/database.dart';
 import 'package:next_episode/data/feedback.dart';
+import 'package:next_episode/domain/request_diagnostic.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -62,7 +63,19 @@ void main() {
     );
     expect(drafted, isNull);
     final result = await sender.send([
-      FeedbackIssue('A show', 'TVmaze timed out.', DateTime.utc(2026, 10, 10)),
+      FeedbackIssue(
+        'A show',
+        'TVmaze timed out.',
+        DateTime.utc(2026, 10, 10),
+        entityKey: 'tv:10',
+        diagnostic: RequestDiagnostic(
+          endpoint: '/tv/42/season/2',
+          exceptionType: 'receiveTimeout',
+          durationMs: 15000,
+          attempts: 3,
+          occurredAt: DateTime.utc(2026, 10, 10),
+        ),
+      ),
     ]);
     expect(result, FeedbackMailResult.opened);
     expect(drafted?.recipients, ['support@example.com']);
@@ -74,6 +87,11 @@ void main() {
     expect(report, contains('A show: TVmaze timed out.'));
     expect(report, contains('App: 0.1.2 (10)'));
     expect(report, isNot(contains('watched')));
+    expect(report, contains('/tv/42/season/2'));
+    expect(report, contains('"attempts":3'));
+    expect(report, contains('Resource: tv:10'));
+    expect(report, contains('unresolved at last attempt'));
+    expect(report, isNot(contains('Authorization')));
   });
 
   test('missing support email stops before opening a composer', () async {

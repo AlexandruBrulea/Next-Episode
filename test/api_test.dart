@@ -143,7 +143,7 @@ void main() {
           isA<ApiFailure>().having(
             (e) => e.message,
             'message',
-            contains('timp'),
+            contains('timed out'),
           ),
         ),
       );

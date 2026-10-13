@@ -54,6 +54,7 @@ void main() {
           {'score': 1.0, 'show': showJson()},
         ],
         '/shows/42' => showJson(),
+        '/shows/42/crew' => [],
         '/shows/42/seasons' => [
           {'id': 100, 'number': 1, 'name': '', 'image': null, 'summary': null},
         ],
@@ -90,22 +91,30 @@ void main() {
       expect(calls, hasLength(1));
     },
   );
-  test('complete series uses three requests; specials isolated and no invented dates', () async {
-    final bundle = await provider.series(42);
-    expect(bundle.title.statusLabel, 'Ongoing');
-    expect(bundle.title.nextEpisode!.id, 3);
-    expect(bundle.seasons.map((s) => s.number), [1, 0]);
-    expect(bundle.seasons.last.episodes.single.isSpecial, isTrue);
-    expect(bundle.seasons.first.episodes.last.airDate, isNull);
-    expect(bundle.seasons.first.episodes.first.title, 'Episodul 1');
-    expect(bundle.title.raw['vote_count'], isNull);
-    expect(calls, hasLength(3));
-    expect(calls.last.queryParameters['specials'], 1);
-    expect(
-      WatchProgress.calculate(bundle, {}, DateTime(2026)).aired,
-      hasLength(1),
-    );
-  });
+  test(
+    'complete series includes crew; specials isolated and no invented dates',
+    () async {
+      final bundle = await provider.series(42);
+      expect(bundle.title.statusLabel, 'Ongoing');
+      expect(bundle.title.nextEpisode!.id, 3);
+      expect(bundle.seasons.map((s) => s.number), [1, 0]);
+      expect(bundle.seasons.last.episodes.single.isSpecial, isTrue);
+      expect(bundle.seasons.first.episodes.last.airDate, isNull);
+      expect(bundle.seasons.first.episodes.first.title, 'Episode 1');
+      expect(bundle.title.raw['vote_count'], isNull);
+      expect(calls.map((call) => call.path), [
+        '/shows/42',
+        '/shows/42/crew',
+        '/shows/42/seasons',
+        '/shows/42/episodes',
+      ]);
+      expect(calls.last.queryParameters['specials'], 1);
+      expect(
+        WatchProgress.calculate(bundle, {}, DateTime(2026)).aired,
+        hasLength(1),
+      );
+    },
+  );
   test('unsupported movies are explicit and do not make requests', () async {
     await expectLater(
       provider.search('Movie', MediaType.movie, 1),

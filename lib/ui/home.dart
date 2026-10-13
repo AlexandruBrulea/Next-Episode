@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
 import '../data/repositories.dart';
-import '../data/feedback.dart';
 import '../domain/models.dart';
 import 'common.dart';
 import 'details.dart';
@@ -60,10 +59,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     openScreen(
       context,
       FeedbackScreen(
-        currentIssues: [
-          for (final issue in syncIssues)
-            FeedbackIssue(issue.title, issue.message, DateTime.now()),
-        ],
+        currentIssues: [for (final issue in syncIssues) issue.toFeedback()],
       ),
     );
   }
