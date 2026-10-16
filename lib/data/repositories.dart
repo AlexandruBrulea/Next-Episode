@@ -243,16 +243,20 @@ class SyncRepository {
     final pending = <LibraryEntry>[];
     for (final entry in entries) {
       final deferred = _failures[entry.title.key];
+      final failedIdentity =
+          deferred != null &&
+          deferred.identity ==
+              '${entry.title.provider}:${entry.title.sourceId}';
       if (onlyStale &&
           deferred != null &&
           now().isBefore(deferred.retryAt) &&
-          deferred.identity ==
-              '${entry.title.provider}:${entry.title.sourceId}') {
+          failedIdentity) {
         issues.add(deferred.issue);
         errors.add('${deferred.issue.title}: ${deferred.issue.message}');
         continue;
       }
       if (onlyStale &&
+          !failedIdentity &&
           entry.title.provider == series.api.id &&
           entry.updatedAt != null &&
           now().difference(entry.updatedAt!) <

@@ -179,7 +179,7 @@ void main() {
     },
   );
 
-  test('failure cooldown skips HTTP, keeps error visible and marks later recovery resolved', () async {
+  test('failure cooldown skips HTTP, keeps diagnostics and marks later recovery resolved', () async {
     final db = AppDatabase.memory();
     addTearDown(db.close);
     final api = ControlledApi()
@@ -207,6 +207,63 @@ void main() {
       clock.toUtc(),
     );
   });
+
+  for (final status in [503, 404]) {
+    test(
+      'failed fresh title retries after $status cooldown without refetching healthy titles',
+      () async {
+        final db = AppDatabase.memory();
+        addTearDown(db.close);
+        final api = ControlledApi()
+          ..failures.add(1)
+          ..status = status;
+        api.release.complete();
+        var clock = DateTime.now();
+        final originalDate = clock;
+        // Ended shows have a seven-day TTL, longer than either failure cooldown.
+        await seed(db, show(1, status: 'Ended'), clock);
+        await seed(db, show(2, status: 'Ended'), clock);
+        await db.mark('episode:1:101', true, clock);
+        final sync = SyncRepository(
+          db,
+          SeriesRepository(api, db),
+          MoviesRepository(api, db),
+          now: () => clock,
+        );
+        await sync.refresh();
+        expect(api.fetched, containsAll([1, 2]));
+        expect(
+          (await db.library()).firstWhere((e) => e.title.id == 1).updatedAt,
+          originalDate,
+        );
+        api.fetched.clear();
+        // Retain a fresh healthy ended show throughout the simulated interval.
+        await seed(db, show(2, status: 'Ended'), clock);
+        clock = clock.add(
+          status == 404
+              ? const Duration(hours: 23)
+              : const Duration(minutes: 4),
+        );
+        expect((await sync.refresh(onlyStale: true)).issues, hasLength(1));
+        expect(api.fetched, isEmpty);
+        api.failures.clear();
+        clock = clock.add(
+          status == 404
+              ? const Duration(hours: 1, seconds: 1)
+              : const Duration(minutes: 1, seconds: 1),
+        );
+        final recovered = await sync.refresh(onlyStale: true);
+        expect(api.fetched, [1]);
+        expect(recovered.refreshedKeys, {'tv:1'});
+        expect(recovered.issues, isEmpty);
+        expect(
+          (await FeedbackIssueStore(db).load()).single.resolvedAt,
+          clock.toUtc(),
+        );
+        expect((await db.watched())['episode:1:101'], originalDate);
+      },
+    );
+  }
 
   test(
     'active titles have priority over ended titles even when added earlier',

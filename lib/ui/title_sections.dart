@@ -65,10 +65,10 @@ class TitleInformation extends StatelessWidget {
       heading('Where to watch'),
       if (availableServices.isEmpty) const Text('No viewing options available yet.'),
           Wrap(spacing: 16, runSpacing: 12, children: [for (final provider in availableServices)
-            SizedBox(width: 100, child: Column(children: [
-              Poster(imageUrl(provider['logo_path']), width: 48, height: 48, isPoster: false),
-              const SizedBox(height: 6), Text(string(provider['provider_name']), textAlign: TextAlign.center),
-            ])),
+            Tooltip(
+              message: string(provider['provider_name']),
+              child: Poster(imageUrl(provider['logo_path']), width: 48, height: 48, isPoster: false),
+            ),
           ]),
       if (availableServices.isNotEmpty) ...[
         if (title.provider == 'tmdb')

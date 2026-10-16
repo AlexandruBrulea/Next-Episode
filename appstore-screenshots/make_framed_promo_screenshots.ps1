@@ -1,4 +1,11 @@
-$root = 'E:\WORK\Next-Episode\appstore-screenshots'
+param(
+  [switch]$LibraryOnly,
+  [string]$IphoneLibrarySource,
+  [string]$IpadLibrarySource,
+  [string]$LibraryOutputName = 'art-01-library-v2.jpg'
+)
+
+$root = $PSScriptRoot
 $bgPath = Join-Path $root 'promo-background.png'
 Add-Type -AssemblyName System.Drawing
 
@@ -58,7 +65,22 @@ function DrawDevice($g,$src,[int]$canvasW,[int]$canvasH,[int]$deviceY,[bool]$isI
   $innerW = $outerW - 2*$bezel; $innerH = $outerH - 2*$bezel
   $innerRadius = [Math]::Max(8,$radius-$bezel)
   $clip = RoundedPath $innerX $innerY $innerW $innerH $innerRadius
-  $g.SetClip($clip); $g.DrawImage($src,$innerX,$innerY,$innerW,$innerH); $g.ResetClip(); $clip.Dispose()
+  $g.SetClip($clip)
+  if ($LibraryOnly -and $isIphone) {
+    # The new capture has no status-bar inset. Keep the entire capture inside
+    # the rounded screen without cutting its top title or stretching its UI.
+    $screenBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255,12,16,32))
+    $g.FillRectangle($screenBrush,$innerX,$innerY,$innerW,$innerH); $screenBrush.Dispose()
+    $safeY = [int]($innerH * 0.055)
+    $captureW = [int]([Math]::Min($innerW, ($innerH - 2*$safeY) * $aspect))
+    $captureH = [int]($captureW / $aspect)
+    $captureX = $innerX + [int](($innerW-$captureW)/2)
+    $captureY = $innerY + [int](($innerH-$captureH)/2)
+    $g.DrawImage($src,$captureX,$captureY,$captureW,$captureH)
+  } else {
+    $g.DrawImage($src,$innerX,$innerY,$innerW,$innerH)
+  }
+  $g.ResetClip(); $clip.Dispose()
 
   # A simple hardware treatment makes the frame read as a device while leaving the screenshot pixel-perfect.
   $hardware = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(230,2,3,7))
@@ -109,6 +131,14 @@ function MakeFramedPromo($source,$destination,[int]$w,[int]$h,[string]$index,[st
 $iphoneSrc=Join-Path $root 'iphone-6.5'; $ipadSrc=Join-Path $root 'ipad-13'
 $iphoneOut=Join-Path $root 'promo-iphone-framed'; $ipadOut=Join-Path $root 'promo-ipad-framed'
 New-Item -ItemType Directory -Force -Path $iphoneOut,$ipadOut | Out-Null
+if ($LibraryOnly) {
+  if (!(Test-Path -LiteralPath $IphoneLibrarySource) -or !(Test-Path -LiteralPath $IpadLibrarySource)) {
+    throw 'Both library screenshot source files must exist.'
+  }
+  MakeFramedPromo $IphoneLibrarySource (Join-Path $iphoneOut $LibraryOutputName) 1242 2688 '01' 'LIBRARY' 'Your library, at a glance' 'Keep every show and movie organized.' $true
+  MakeFramedPromo $IpadLibrarySource (Join-Path $ipadOut $LibraryOutputName) 2064 2752 '01' 'LIBRARY' 'Your library, at a glance' 'Keep every show and movie organized.' $false
+  return
+}
 $iphoneItems=@(
   @('01','LIBRARY','Your library, at a glance','Keep every show and movie organized.','1.jpg','01-library.jpg'),
   @('02','DETAILS','Explore every detail','Episode descriptions, ratings and cast in one place.','2.jpg','02-details.jpg'),

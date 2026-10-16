@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/providers.dart';
-import '../data/repositories.dart';
+import '../data/feedback.dart';
+import '../domain/catalog_provider.dart';
 import '../domain/models.dart';
 import 'common.dart';
 import 'details.dart';
@@ -12,7 +13,6 @@ import 'feeds.dart';
 import 'app_theme.dart';
 import 'library_filter.dart';
 import 'library_grid.dart';
-import 'feedback.dart';
 import 'settings.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -41,27 +41,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     retentionTimer = Timer(delay, () async {
       try {
         await ref.read(libraryProvider.notifier).maintainRetention();
-      } catch (_) {
-        if (mounted) {
-          setState(
-            () => syncMessage = 'Local information could not be refreshed. Please restart the app.',
-          );
-        }
+      } catch (error) {
+        await recordBackgroundFailure('Local maintenance', error);
       } finally {
         if (mounted) scheduleRetention();
       }
     });
   }
 
-  String? syncMessage;
-  List<SyncIssue> syncIssues = const [];
-  void showSyncDetails() {
-    openScreen(
-      context,
-      FeedbackScreen(
-        currentIssues: [for (final issue in syncIssues) issue.toFeedback()],
-      ),
-    );
+  Future<void> recordBackgroundFailure(String operation, Object error) async {
+    if (!mounted) return;
+    try {
+      final failure = error is ApiFailure ? error : null;
+      await FeedbackIssueStore(ref.read(databaseProvider)).record([
+        FeedbackIssue(
+          operation,
+          failure?.message ?? 'A background update could not be completed.',
+          failure?.diagnostic?.occurredAt ?? DateTime.now(),
+          diagnostic: failure?.diagnostic,
+        ),
+      ]);
+    } catch (_) {
+      // Diagnostic storage must not interrupt offline use or future attempts.
+    }
   }
 
   bool syncing = false;
@@ -83,22 +85,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     setState(() => syncing = true);
     try {
       await ref.read(libraryProvider.future);
-      final report = await ref
-          .read(libraryProvider.notifier)
-          .sync(onlyStale: true);
-      if (mounted) {
-        setState(() {
-          syncMessage = report.errors.isNotEmpty ? report.message : null;
-          syncIssues = report.issues;
-        });
-      }
+      // Per-title failures are recorded by SyncRepository and retried on a
+      // later eligible sync. Background failures never display a banner.
+      await ref.read(libraryProvider.notifier).sync(onlyStale: true);
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          syncMessage = publicError(e);
-          syncIssues = const [];
-        });
-      }
+      await recordBackgroundFailure('Library sync', e);
     } finally {
       if (mounted) setState(() => syncing = false);
       scheduleRetention();
@@ -155,21 +146,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
           const Padding(
             padding: EdgeInsets.all(8),
             child: Text('DEMO • Sample data • Progress resets on exit'),
-          ),
-        if (syncMessage != null)
-          MaterialBanner(
-            content: Text(syncMessage!),
-            actions: [
-              if (syncIssues.isNotEmpty)
-                TextButton(
-                  onPressed: showSyncDetails,
-                  child: const Text('Details'),
-                ),
-              TextButton(
-                onPressed: () => setState(() => syncMessage = null),
-                child: const Text('Close'),
-              ),
-            ],
           ),
         Expanded(
           child: IndexedStack(
